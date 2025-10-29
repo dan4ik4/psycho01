@@ -1,30 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
+import 'utils/theme_manager.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
-
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
-
-  runApp(MyApp());
+void main() {
+  runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool isDarkMode = false;
+
   @override
   Widget build(BuildContext context) {
-    final session = Supabase.instance.client.auth.currentSession;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Психологическое приложение',
-      theme: ThemeData(primarySwatch: Colors.indigo),
-      home: session == null ? AuthScreen() : HomeScreen(),
+      title: 'Mind Balance',
+      theme: ThemeManager.lightTheme,
+      darkTheme: ThemeManager.darkTheme,
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      home: const HomeScreen(),
     );
   }
 }

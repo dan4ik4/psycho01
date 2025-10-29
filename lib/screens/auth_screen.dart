@@ -16,6 +16,9 @@ class _AuthScreenState extends State<AuthScreen> {
   final regEmailController = TextEditingController();
   final regPasswordController = TextEditingController();
   final fioController = TextEditingController(); // 🟣 Для регистрации
+  final ageController = TextEditingController(); // 🟣 Возраст
+
+  String? selectedGender; // 🟣 Мужской / Женский
 
   final _formKey = GlobalKey<FormState>();
 
@@ -38,11 +41,16 @@ class _AuthScreenState extends State<AuthScreen> {
         final email = regEmailController.text.trim();
         final password = regPasswordController.text;
         final fio = fioController.text.trim();
+        final age = int.parse(ageController.text.trim());
 
         await Supabase.instance.client.auth.signUp(
           email: email,
           password: password,
-          data: {'full_name': fio},
+          data: {
+            'full_name': fio,
+            'gender': selectedGender,
+            'age': age,
+          },
         );
       }
 
@@ -59,6 +67,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   /// 🟣 Диалог входа / регистрации
+  /// Замените текущий метод _showAuthDialog() этим кодом
   void _showAuthDialog() {
     // 🟣 Каждый раз при открытии окна — очищаем поля и скрываем пароль
     loginEmailController.clear();
@@ -66,6 +75,8 @@ class _AuthScreenState extends State<AuthScreen> {
     regEmailController.clear();
     regPasswordController.clear();
     fioController.clear();
+    ageController.clear();
+    selectedGender = null;
 
     bool obscurePassword = true; // 🟣 Локальное состояние для диалога
 
@@ -73,13 +84,19 @@ class _AuthScreenState extends State<AuthScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
+          // Уменьшаем горизонтальные отступы диалога на 10px с каждой стороны,
+          // чтобы общая ширина диалога увеличилась на 20px.
+          insetPadding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 24.0),
+
           title: Text(isLogin ? 'Вход' : 'Регистрация'),
           content: Form(
             key: _formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!isLogin) // 🟣 Только при регистрации
+
+                // 🟣 Только при регистрации — ФИО
+                if (!isLogin)
                   TextFormField(
                     controller: fioController,
                     decoration: const InputDecoration(labelText: 'ФИО'),
@@ -87,9 +104,97 @@ class _AuthScreenState extends State<AuthScreen> {
                     value == null || value.isEmpty ? 'Введите ФИО' : null,
                   ),
 
+                // 🟣 Только при регистрации — ПОЛ
+                if (!isLogin)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        const Text("Пол:  "),
+                        GestureDetector(
+                          onTap: () {
+                            setStateDialog(() => selectedGender = 'Мужской');
+                          },
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.deepPurple),
+                                ),
+                                child: selectedGender == 'Мужской'
+                                    ? Center(
+                                  child: Container(
+                                    width: 12,
+                                    height: 12,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.deepPurple,
+                                    ),
+                                  ),
+                                )
+                                    : null,
+                              ),
+                              const SizedBox(width: 6),
+                              const Text("Мужской"),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        GestureDetector(
+                          onTap: () {
+                            setStateDialog(() => selectedGender = 'Женский');
+                          },
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.deepPurple),
+                                ),
+                                child: selectedGender == 'Женский'
+                                    ? Center(
+                                  child: Container(
+                                    width: 12,
+                                    height: 12,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.deepPurple,
+                                    ),
+                                  ),
+                                )
+                                    : null,
+                              ),
+                              const SizedBox(width: 6),
+                              const Text("Женский"),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // 🟣 Только при регистрации — ВОЗРАСТ
+                if (!isLogin)
+                  TextFormField(
+                    controller: ageController,
+                    decoration: const InputDecoration(labelText: 'Возраст'),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Введите возраст';
+                      final n = int.tryParse(value);
+                      if (n == null || n < 1 || n > 150) return 'Возраст 1–150';
+                      return null;
+                    },
+                  ),
+
                 TextFormField(
-                  controller:
-                  isLogin ? loginEmailController : regEmailController,
+                  controller: isLogin ? loginEmailController : regEmailController,
                   decoration: const InputDecoration(labelText: 'Email'),
                   validator: (value) =>
                   value == null || value.isEmpty ? 'Введите email' : null,
@@ -103,21 +208,17 @@ class _AuthScreenState extends State<AuthScreen> {
                     labelText: 'Пароль',
                     suffixIcon: IconButton(
                       icon: Icon(
-                        obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
+                        obscurePassword ? Icons.visibility_off : Icons.visibility,
                       ),
                       onPressed: () {
-                        // 🟣 Управляем только локальным состоянием в диалоге
                         setStateDialog(() {
                           obscurePassword = !obscurePassword;
                         });
                       },
                     ),
                   ),
-                  validator: (value) => value == null || value.length < 6
-                      ? 'Минимум 6 символов'
-                      : null,
+                  validator: (value) =>
+                  value == null || value.length < 6 ? 'Минимум 6 символов' : null,
                 ),
 
                 if (isLogin)
@@ -128,9 +229,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: GestureDetector(
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                Text('Функция восстановления пароля в разработке')),
+                            const SnackBar(content: Text('Функция восстановления пароля в разработке')),
                           );
                         },
                         child: const Text(
@@ -147,25 +246,35 @@ class _AuthScreenState extends State<AuthScreen> {
               ],
             ),
           ),
+
+          // Выравниваем actions влево и делаем две кнопки в строке (на одном уровне)
+          actionsAlignment: MainAxisAlignment.start,
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Отмена'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (_formKey.currentState!.validate()) {
-                  Navigator.pop(context);
-                  _submit();
-                }
-              },
-              child: Text(isLogin ? 'Войти' : 'Зарегистрироваться'),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      Navigator.pop(context);
+                      _submit();
+                    }
+                  },
+                  child: Text(isLogin ? 'Войти' : 'Зарегистрироваться'),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Отмена'),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -179,14 +288,25 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             Column(
               children: [
-                const SizedBox(height: 30), // 🟣 Регулирует положение лотуса
+                const SizedBox(height: 0), // 🟣 поднял выше
                 Center(
                   child: Image.asset(
                     'assets/images/lotus.png',
-                    height: 240, // 🟣 Можно изменить размер
-                    width: 240,
+                    height: 200, // 🟣 уменьшил, чтобы поместилось
+                    width: 200,
                   ),
                 ),
+
+                // 🟣 Welcome
+                Text(
+                  "Welcome",
+                  style: TextStyle(
+                    fontSize: 49, // Саня, мы всё помним)))))))))))))))))))))))))))
+                    fontWeight: FontWeight.bold,
+                    color: purple,
+                  ),
+                ),
+
                 const Spacer(), // 🟣 Добавляет "воздух"
 
                 // 🔘 Кнопки
