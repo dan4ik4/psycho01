@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'catalog_screen.dart';
 import 'chat_screen.dart';
 import 'plan_screen.dart';
+import 'shop_placeholder_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +22,7 @@ class HomeScreen extends StatefulWidget {
 /// but fixes the left drawer so it reliably appears above the bottom nav and removes the
 /// "Profile" button from the drawer.
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  int userPoints = 0;
   int _selectedIndex = 0;
   bool isDarkMode = false;
 
@@ -333,16 +335,43 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         Image.asset('assets/images/lotus.png', height: 60),
                         const Spacer(),
                         Stack(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.notifications_none, color: purple, size: 30),
-                              onPressed: () { setState(()=>isNotificationsOpen=true); },
-                            ),
-                            if (hasNotifications)
-                              Positioned(
-                                top: 6, right: 6,
-                                child: Container(width:10, height:10, decoration: BoxDecoration(color: purple, shape: BoxShape.circle)),
+                          children: [GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ShopPlaceholderScreen()),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white, // фон белый
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black12,
+                                    blurRadius: 5,
+                                    offset: const Offset(2, 2),
+                                  ),
+                                ],
                               ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.star, color: purple, size: 22), // фиолетовая звезда
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '$userPoints',
+                                    style: TextStyle(
+                                      color: purple, // фиолетовый текст
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
                           ],
                         )
                       ],
