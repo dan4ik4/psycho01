@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'catalog_screen.dart';
 import 'chat_screen.dart';
@@ -68,7 +69,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       isDarkMode = prefs.getBool('isDarkMode') ?? false;
     });
 
-    // load notes
+    // Try to get Supabase user metadata if available (prefer Supabase over prefs)
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        final meta = user.userMetadata ?? {};
+        final supaName = (meta['full_name'] ?? meta['fullName'] ?? meta['name'])?.toString();
+        if (supaName != null && supaName.isNotEmpty) {
+          setState(() {
+            fullName = supaName;
+          });
+        }
+      }
+    } catch (_) {
+      // ignore if supabase not initialized
+    }
+
+    // load notes from prefs
     final keys = prefs.getKeys();
     for (final k in keys) {
       if (k.startsWith('note_')) {
@@ -185,8 +202,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           if (existing != null) ...[
                             OutlinedButton(
                               onPressed: () async {
-                                await _deleteNoteForDay(day);
-                                Navigator.pop(context);
+                                // confirm delete once
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogContext) => AlertDialog(
+                                    title: const Text('Удалить заметку?'),
+                                    content: const Text('Вы действительно хотите удалить заметку?'),
+                                    actionsAlignment: MainAxisAlignment.start,
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dialogContext, true),
+                                        child: const Text('Да'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(dialogContext, false),
+                                        child: const Text('Нет'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirmed == true) {
+                                  await _deleteNoteForDay(day);
+                                  Navigator.pop(context);
+                                }
                               },
                               child: const Text('Удалить'),
                             ),
@@ -363,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'].map((d) =>
-                                Expanded(child: Center(child: Text(d, style: TextStyle(color: textColor, fontSize: 12)))))
+                                Expanded(child: Center(child: Text(d, style: TextStyle(color: textColor, fontSize: 12)))) )
                                 .toList(),
                           ),
                           const SizedBox(height: 8),
@@ -460,79 +499,132 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ],
               ),
 
-              // Profile slide (80% from left) — covers bottom nav as requested
-              if (isProfileOpen) Positioned.fill(
-                child: GestureDetector(
-                  onTap: () { setState(()=>isProfileOpen=false); },
-                  child: Container(color: Colors.black.withOpacity(0.4)),
+              // ---------- REPLACED PROFILE DRAWER & OVERLAY ----------
+              // 🟣 Профильная панель (перекрывает всё, включая нижнюю навигацию)
+              if (isProfileOpen) ...[
+                // Тёмный фон-затемнение
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: () => setState(() => isProfileOpen = false),
+                    child: Container(color: Colors.black.withOpacity(0.4)),
+                  ),
                 ),
-              ),
-              if (isProfileOpen) AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                left: 0,
-                top: 0, bottom: 0,
-                child: FractionallySizedBox(
-                  widthFactor: 0.8,
-                  child: Container(
-                    color: cardColor,
-                    padding: const EdgeInsets.all(18),
-                    child: SafeArea(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(fullName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)),
-                          const SizedBox(height: 8),
-                          Text('Пол: ---', style: TextStyle(color: textColor)),
-                          Text('Возраст: ---', style: TextStyle(color: textColor)),
-                          Text('Email: ---', style: TextStyle(color: textColor)),
-                          const Spacer(),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Тёмная тема', style: TextStyle(color: textColor)),
-                              IconButton(
-                                icon: Icon(isDarkMode ? Icons.wb_sunny : Icons.nightlight_round, color: purple),
-                                onPressed: () async {
-                                  setState(()=>isDarkMode=!isDarkMode);
-                                  final prefs = await SharedPreferences.getInstance();
-                                  prefs.setBool('isDarkMode', isDarkMode);
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton(onPressed: (){}, child: const Text('Профиль')),
-                          OutlinedButton(onPressed: (){}, child: const Text('Настройки')),
-                        ],
+
+                // Сама панель
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  right: 0, // 🟣 чтобы перекрывала всю ширину, включая нижнюю панель
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: 0.8,
+                    child: Container(
+                      color: cardColor,
+                      padding: const EdgeInsets.all(18),
+                      child: SafeArea(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 🟣 Верхняя строка с именем и переключателем темы
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    fullName,
+                                    style: TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    isDarkMode ? Icons.wb_sunny : Icons.nightlight_round,
+                                    color: purple,
+                                  ),
+                                  onPressed: () async {
+                                    setState(() => isDarkMode = !isDarkMode);
+                                    final prefs = await SharedPreferences.getInstance();
+                                    prefs.setBool('isDarkMode', isDarkMode);
+                                  },
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 8),
+                            Text('Пол: ---', style: TextStyle(color: textColor)),
+                            Text('Возраст: ---', style: TextStyle(color: textColor)),
+                            Text('Email: ---', style: TextStyle(color: textColor)),
+
+                            const Spacer(),
+                            OutlinedButton(
+                              onPressed: () {},
+                              child: const Text('Настройки'),
+                            ),
+                            const SizedBox(height: 8),
+                            OutlinedButton(
+                              onPressed: () async {
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.clear();
+                                setState(() {
+                                  fullName = 'Пользователь';
+                                });
+                              },
+                              child: const Text('Выйти'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
 
-              // Notifications (full width), close with arrow
-              if (isNotificationsOpen) AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                right: 0, top: 0, bottom: 0,
-                child: Container(
-                  width: MediaQuery.of(context).size.width,
-                  color: cardColor,
-                  child: SafeArea(
-                    child: Column(
-                      children: [
-                        Row(
+              // ---------- REPLACED NOTIFICATIONS PANEL ----------
+              if (isNotificationsOpen) ...[
+                // overlay that closes notifications when tapping outside
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: () => setState(()=>isNotificationsOpen=false),
+                    child: Container(color: Colors.black.withOpacity(0.05)),
+                  ),
+                ),
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  right: isNotificationsOpen ? 0 : -MediaQuery.of(context).size.width,
+                  top: 0,
+                  bottom: 0,
+                  child: SizedBox(
+                    width: MediaQuery.of(context).size.width,
+                    child: SafeArea(
+                      child: Container(
+                        color: cardColor,
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
                           children: [
-                            IconButton(icon: Icon(Icons.arrow_back, color: purple), onPressed: ()=>setState(()=>isNotificationsOpen=false)),
-                            const SizedBox(width: 8),
-                            Text('Уведомления', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+                            Row(
+                              children: [
+                                IconButton(icon: Icon(Icons.arrow_back, color: purple), onPressed: ()=>setState(()=>isNotificationsOpen=false)),
+                                const SizedBox(width: 8),
+                                Text('Уведомления', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                                const Spacer(),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(child: Center(child: Text('Уведомлений пока нет', style: TextStyle(color: textColor)))),
                           ],
                         ),
-                        Expanded(child: Center(child: Text('Уведомлений пока нет', style: TextStyle(color: textColor))))
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
 
               // bottom navigation — raised above system nav
               Align(
