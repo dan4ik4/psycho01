@@ -14,41 +14,40 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-/// NOTE:
-/// This file preserves your original main UI (calendar, breathing widget, bottom nav),
-/// but fixes the left drawer so it reliably appears above the bottom nav and removes the
-/// "Profile" button from the drawer.
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  int userPoints = 0;
-  int _selectedIndex = 0;
-  bool isDarkMode = false;
-
-  bool isProfileOpen = false;
-  bool isNotificationsOpen = false;
-  bool hasNotifications = true;
-
+  // Theme & colors
+  bool isDarkTheme = false;
   final Color purple = const Color(0xFF5E3B8C);
   final Color darkWhite = const Color(0xFFF2F2F2);
   final Color pureWhite = Colors.white;
 
-  // state
+  // UI state
+  bool isProfileOpen = false;
+  bool isShopOpen = false; // not used as panel - shop has its own screen
+  int userPoints = 0;
   String fullName = 'Пользователь';
-  Map<String, Map<String, dynamic>> notesByDate = {}; // key: 'YYYY-MM-DD' -> {text, createdAt}
+
+  // calendar/notes
+  Map<String, Map<String, dynamic>> notesByDate = {}; // key: 'YYYY-MM-DD' -> {'text', 'createdAt'}
+  late DateTime visibleMonth; // used to show month in calendar
 
   // breathing animation
-  bool breathingOpen = false;
-  late AnimationController _breathController;
+  late AnimationController breathController;
+
+  // bottom nav
+  int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _breathController = AnimationController(vsync: this, duration: const Duration(seconds: 6))
-      ..repeat(reverse: true);
+    visibleMonth = DateTime.now();
+    breathController = AnimationController(vsync: this, duration: const Duration(seconds: 6));
+    breathController.repeat(reverse: true);
     _loadAll();
-    // transparent nav bars
+    // system UI transparent nav bars
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -59,42 +58,45 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _breathController.dispose();
+    breathController.dispose();
     super.dispose();
   }
 
+  // ------------------- Storage helpers -------------------
+  String _dateKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+
   Future<void> _loadAll() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs();
     setState(() {
-      fullName = prefs.getString('full_name') ?? 'Пользователь';
-      isDarkMode = prefs.getBool('isDarkMode') ?? false;
+      fullName = prefs.getString('full_name') ?? fullName;
+      isDarkTheme = prefs.getBool('isDarkTheme') ?? false;
+      userPoints = prefs.getInt('user_points') ?? 0;
     });
 
-    // Try to get Supabase user metadata if available (prefer Supabase over prefs)
+    // Try to get Supabase metadata if available (supersedes prefs)
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
         final meta = user.userMetadata ?? {};
-        final supaName = (meta['full_name'] ?? meta['fullName'] ?? meta['name'])?.toString();
+        final supaName = (meta['full_name'] ?? meta['name'])?.toString();
         if (supaName != null && supaName.isNotEmpty) {
-          setState(() {
-            fullName = supaName;
-          });
+          setState(() => fullName = supaName);
         }
       }
-    } catch (_) {
-      // ignore if supabase not initialized
-    }
+    } catch (_) {}
 
-    // load notes from prefs
+    // load notes
     final keys = prefs.getKeys();
+    final Map<String, Map<String, dynamic>> tmp = {};
     for (final k in keys) {
       if (k.startsWith('note_')) {
         try {
           final raw = prefs.getString(k);
           if (raw != null) {
             final map = jsonDecode(raw) as Map<String, dynamic>;
-            notesByDate[k.substring(5)] = {
+            final dateKey = k.substring(5);
+            tmp[dateKey] = {
               'text': map['text'] ?? '',
               'createdAt': map['createdAt'] ?? '',
             };
@@ -102,91 +104,150 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         } catch (_) {}
       }
     }
-    setState(() {});
+    setState(() => notesByDate = tmp);
   }
 
   Future<void> _saveNoteForDay(DateTime day, String text) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs();
     final key = _dateKey(day);
     final nowIso = DateTime.now().toIso8601String();
     final data = jsonEncode({'text': text, 'createdAt': nowIso});
     await prefs.setString('note_$key', data);
-    notesByDate[key] = {'text': text, 'createdAt': nowIso};
-    setState(() {});
+    // award points only once per date: check flag
+    final awardedKey = 'points_awarded_$key';
+    final alreadyAwarded = prefs.getBool(awardedKey) ?? false;
+
+    // award only if note created today (same date) and not already awarded
+    final createdAt = DateTime.now();
+    final sameDay = createdAt.year == day.year && createdAt.month == day.month && createdAt.day == day.day;
+
+    if (!alreadyAwarded && sameDay) {
+      userPoints += 1; // simple +1; can be extended to multiplier logic
+      await prefs.setInt('user_points', userPoints);
+      await prefs.setBool(awardedKey, true);
+    }
+
+    setState(() {
+      notesByDate[key] = {'text': text, 'createdAt': nowIso};
+    });
   }
 
   Future<void> _deleteNoteForDay(DateTime day) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs();
     final key = _dateKey(day);
     await prefs.remove('note_$key');
-    notesByDate.remove(key);
-    setState(() {});
+    // Note: don't remove awarded flag -> prevents re-awarding on re-create the same day
+    setState(() => notesByDate.remove(key));
   }
 
-  String _dateKey(DateTime d) => '${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
-
-  Map<String,dynamic>? _noteForDay(DateTime day) {
-    return notesByDate[_dateKey(day)];
-  }
-
-  // Helpers for calendar
+  // ------------------- Calendar helpers -------------------
   DateTime _firstDayOfMonth(DateTime d) => DateTime(d.year, d.month, 1);
   int _daysInMonth(DateTime d) => DateTime(d.year, d.month + 1, 0).day;
 
-  // open detail sheet for a day
+  // Build grid (Monday first)
+  List<DateTime> _buildGridDates(DateTime month) {
+    final first = _firstDayOfMonth(month);
+    // weekday: Mon=1..Sun=7; we want Mon..Sun
+    final int startOffset = first.weekday - 1; // 0 if Mon, 6 if Sun
+    final total = 42; // 6 rows x 7 cols
+    final List<DateTime> dates = List.generate(total, (i) {
+      final dayIndex = i - startOffset;
+      return DateTime(month.year, month.month, 1).add(Duration(days: dayIndex));
+    });
+    return dates;
+  }
+
+  // ------------------- UI: Day sheet -------------------
   void _openDaySheet(DateTime day) {
     final key = _dateKey(day);
-    final existing = _noteForDay(day);
+    final existing = notesByDate[key];
     final textController = TextEditingController(text: existing != null ? existing['text'] as String : '');
+    bool hasUnsavedChanges = false;
+
     showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (ctx) {
-          return GestureDetector(
-            onTap: (){}, // prevent closing by tapping the sheet itself
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return WillPopScope(
+          onWillPop: () async {
+            if (hasUnsavedChanges && textController.text.trim().isNotEmpty && (existing == null || existing['text'] != textController.text.trim())) {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (dctx) => AlertDialog(
+                  title: const Text('Вы не сохранили заметку'),
+                  content: const Text('При выходе изменения не будут сохранены. Вы хотите выйти?'),
+                  actionsAlignment: MainAxisAlignment.start,
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
+                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
+                  ],
+                ),
+              );
+              return confirm == true;
+            }
+            return true;
+          },
+          child: GestureDetector(
+            onTap: () {}, // prevent closing by tapping sheet itself
             child: DraggableScrollableSheet(
-              initialChildSize: 0.6,
+              initialChildSize: 0.65,
               minChildSize: 0.3,
               maxChildSize: 0.95,
-              builder: (context, controller) => Container(
+              builder: (context, scrollController) => Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: isDarkMode ? Colors.grey[900] : Colors.white,
+                  color: isDarkTheme ? Colors.grey[900] : Colors.white,
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 ),
                 child: SingleChildScrollView(
-                  controller: controller,
+                  controller: scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
                         children: [
-                          Expanded(child: Text('Записи на ${day.day}.${day.month}.${day.year}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDarkMode ? Colors.white : Colors.black87))),
-                          IconButton(
-                            icon: Icon(Icons.close, color: purple),
-                            onPressed: () => Navigator.pop(context),
-                          )
+                          Expanded(child: Text('Записи на ${day.day}.${day.month}.${day.year}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDarkTheme ? Colors.white : Colors.black87))),
+                          IconButton(icon: Icon(Icons.close, color: purple), onPressed: () async {
+                            // ask if unsaved changes
+                            if (hasUnsavedChanges && textController.text.trim().isNotEmpty && (existing == null || existing['text'] != textController.text.trim())) {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (dctx) => AlertDialog(
+                                  title: const Text('Вы не сохранили заметку'),
+                                  content: const Text('При выходе изменения не будут сохранены. Вы хотите выйти?'),
+                                  actionsAlignment: MainAxisAlignment.start,
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
+                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) Navigator.pop(context);
+                            } else {
+                              Navigator.pop(context);
+                            }
+                          }),
                         ],
                       ),
                       const SizedBox(height: 8),
                       TextField(
                         controller: textController,
-                        maxLines: 6,
+                        maxLines: 8,
+                        onChanged: (_) => hasUnsavedChanges = true,
                         decoration: InputDecoration(
-                          hintText: 'Напишите что-то хорошее, что произошло сегодня...',
+                          hintText: 'Напишите что-то хорошее, что произошло...',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                           filled: true,
-                          fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                          fillColor: isDarkTheme ? Colors.grey[800] : Colors.grey[100],
                         ),
                       ),
                       const SizedBox(height: 12),
-
                       Row(
                         children: [
                           ElevatedButton.icon(
-                            icon: const Icon(Icons.add),
-                            label: const Text('Сохранить'),
+                            icon: const Icon(Icons.save),
+                            label: const Text('Сохранить', style: TextStyle(color: Colors.white)),
                             style: ElevatedButton.styleFrom(backgroundColor: purple),
                             onPressed: () async {
                               final text = textController.text.trim();
@@ -200,19 +261,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             },
                           ),
                           const SizedBox(width: 12),
-                          if (existing != null) ...[
+                          if (existing != null)
                             OutlinedButton(
                               onPressed: () async {
-                                // confirm delete once
                                 final confirmed = await showDialog<bool>(
                                   context: context,
-                                  builder: (dialogCtx) => AlertDialog(
+                                  builder: (dctx) => AlertDialog(
                                     title: const Text('Удалить заметку?'),
                                     content: const Text('Вы действительно хотите удалить заметку?'),
                                     actionsAlignment: MainAxisAlignment.start,
                                     actions: [
-                                      TextButton(onPressed: () => Navigator.pop(dialogCtx, true), child: const Text('Да')),
-                                      TextButton(onPressed: () => Navigator.pop(dialogCtx, false), child: const Text('Нет')),
+                                      TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
+                                      TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
                                     ],
                                   ),
                                 );
@@ -223,463 +283,387 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               },
                               child: const Text('Удалить'),
                             ),
-                          ]
                         ],
                       ),
                       const SizedBox(height: 12),
-                      // Info about scoring
                       Builder(builder: (c) {
-                        final note = _noteForDay(day);
+                        final note = notesByDate[_dateKey(day)];
                         if (note == null) return const SizedBox.shrink();
                         final createdAt = DateTime.tryParse(note['createdAt'] as String? ?? '');
                         if (createdAt == null) return const SizedBox.shrink();
-                        final sameDay = createdAt.year==day.year && createdAt.month==day.month && createdAt.day==day.day;
+                        final sameDay = createdAt.year == day.year && createdAt.month == day.month && createdAt.day == day.day;
                         return Text(
                           sameDay ? 'Эта запись учтена для сегодняшних очков.' : 'Эта запись НЕ была создана в этот день — очки не начисляются.',
-                          style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black87),
+                          style: TextStyle(color: isDarkTheme ? Colors.white70 : Colors.black87),
                         );
-                      })
+                      }),
                     ],
                   ),
                 ),
               ),
             ),
-          );
-        }
-    ).whenComplete(() => setState((){}));
+          ),
+        );
+      },
+    ).whenComplete(() => setState(() {}));
   }
 
-  // Breathing overlay
+  // ------------------- Breathing overlay -------------------
   void _openBreathOverlay() {
-    setState(() => breathingOpen = true);
     showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) {
-          return WillPopScope(
-            onWillPop: () async { setState(()=>breathingOpen=false); return true; },
-            child: Scaffold(
-              backgroundColor: Colors.black54,
-              body: SafeArea(
-                child: Stack(
-                  children: [
-                    Center(
-                      child: BreathingWidget(controller: _breathController, color: purple),
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return WillPopScope(
+          onWillPop: () async {
+            return true;
+          },
+          child: Scaffold(
+            backgroundColor: Colors.black54,
+            body: SafeArea(
+              child: Stack(
+                children: [
+                  Center(child: _BreathingFull(controller: this, animation: breathController)),
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.of(ctx).pop(),
                     ),
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: IconButton(
-                        icon: Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          setState(()=>breathingOpen=false);
-                        },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ------------------- UI build -------------------
+  @override
+  Widget build(BuildContext context) {
+    final Color bgColor = isDarkTheme ? const Color(0xFF121212) : darkWhite;
+    final Color cardColor = isDarkTheme ? const Color(0xFF1E1E1E) : pureWhite;
+    final Color textColor = isDarkTheme ? Colors.white : Colors.black87;
+    final media = MediaQuery.of(context);
+    final bottomInset = media.padding.bottom;
+
+    final now = DateTime.now();
+    final gridDates = _buildGridDates(visibleMonth);
+
+    // panel width
+    final panelWidth = MediaQuery.of(context).size.width * 0.8;
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              // Top bar
+              Container(
+                height: 100,
+                color: cardColor,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    // menu
+                    IconButton(
+                      icon: Icon(Icons.menu, color: purple, size: 30),
+                      onPressed: () => setState(() => isProfileOpen = true),
+                    ),
+                    const Spacer(),
+                    Image.asset('assets/images/lotus.png', height: 60),
+                    const Spacer(),
+                    // star + points button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopPlaceholderScreen()));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5, offset: const Offset(2,2))],
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.star, color: purple, size: 22),
+                            const SizedBox(width: 6),
+                            Text('$userPoints', style: TextStyle(color: purple, fontSize: 18, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-          );
-        }
-    ).whenComplete(() => setState(()=>breathingOpen=false));
-  }
 
-  // UI building
-  @override
-  Widget build(BuildContext context) {
-    final Color bgColor = isDarkMode ? const Color(0xFF121212) : darkWhite;
-    final Color cardColor = isDarkMode ? const Color(0xFF1E1E1E) : pureWhite;
-    final Color textColor = isDarkMode ? Colors.white : Colors.black87;
+              const SizedBox(height: 10),
 
-    final media = MediaQuery.of(context);
-    final bottomInset = media.padding.bottom; // to avoid system nav overlap
-
-    final now = DateTime.now();
-    final firstOfMonth = _firstDayOfMonth(now);
-    final daysInMonth = _daysInMonth(now);
-    final firstWeekday = firstOfMonth.weekday % 7; // Sunday=0 .. Saturday=6 (make Sunday first)
-    // build list of DateTimes for grid
-    List<DateTime?> gridDates = List.filled(42, null);
-    for (int i=0;i<daysInMonth;i++) {
-      final pos = firstWeekday + i;
-      gridDates[pos] = DateTime(now.year, now.month, i+1);
-    }
-
-    // compute panel width once
-    final double panelWidth = MediaQuery.of(context).size.width * 0.8;
-
-    return AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: Scaffold(
-          key: ValueKey(isDarkMode),
-          backgroundColor: bgColor,
-          body: Stack(
-            children: [
-              // ---------------- MAIN COLUMN (top bar, content) ----------------
-              Column(
-                children: [
-                  // top bar
-                  Container(
-                    height: 100,
+              // Greeting card
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
                     color: cardColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.menu, color: purple, size: 30),
-                          onPressed: () { setState(()=>isProfileOpen=true); },
-                        ),
-                        const Spacer(),
-                        Image.asset('assets/images/lotus.png', height: 60),
-                        const Spacer(),
-                        Stack(
-                          children: [GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const ShopPlaceholderScreen()),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white, // фон белый
-                                borderRadius: BorderRadius.circular(24),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black12,
-                                    blurRadius: 5,
-                                    offset: const Offset(2, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.star, color: purple, size: 22), // фиолетовая звезда
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '$userPoints',
-                                    style: TextStyle(
-                                      color: purple, // фиолетовый текст
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          ],
-                        )
-                      ],
-                    ),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-
-                  const SizedBox(height: 10),
-                  // Greeting card
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Welcome', style: TextStyle(color: purple, fontSize: 26, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          Text('Добро пожаловать, $fullName', style: TextStyle(fontSize: 16, color: textColor)),
-                        ],
-                      ),
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Welcome', style: TextStyle(color: purple, fontSize: 26, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      Text('Добро пожаловать, $fullName', style: TextStyle(fontSize: 16, color: textColor)),
+                    ],
                   ),
-
-                  const SizedBox(height: 8),
-
-                  // Calendar widget area
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: purple.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Text('Календарь позитивных моментов', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
-                              const Spacer(),
-                              Text('${now.month}.${now.year}', style: TextStyle(color: textColor)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-
-                          // days of week header
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'].map((d) =>
-                                Expanded(child: Center(child: Text(d, style: TextStyle(color: textColor, fontSize: 12)))) )
-                                .toList(),
-                          ),
-                          const SizedBox(height: 8),
-
-                          // calendar grid
-                          SizedBox(
-                            height: 240,
-                            child: GridView.builder(
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 7,
-                                  childAspectRatio: 1.0
-                              ),
-                              itemCount: gridDates.length,
-                              itemBuilder: (context, idx) {
-                                final d = gridDates[idx];
-                                if (d==null) return const SizedBox.shrink();
-                                final note = _noteForDay(d);
-                                Color bg = Colors.transparent;
-                                final isToday = d.year==now.year && d.month==now.month && d.day==now.day;
-                                if (note!=null) {
-                                  final created = DateTime.tryParse(note['createdAt'] as String? ?? '');
-                                  if (created!=null && created.year==d.year && created.month==d.month && created.day==d.day) {
-                                    bg = purple.withOpacity(0.45);
-                                  } else {
-                                    bg = purple.withOpacity(0.22);
-                                  }
-                                }
-                                return GestureDetector(
-                                  onTap: () => _openDaySheet(d),
-                                  child: Container(
-                                    margin: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: bg,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Stack(
-                                      children: [
-                                        Center(child: Text('${d.day}', style: TextStyle(color: textColor))),
-                                        if (isToday)
-                                          Positioned(top:4, right:4, child: Container(width:6,height:6, decoration: BoxDecoration(shape:BoxShape.circle, color: purple))),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          )
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Quick breathing widget card (compact)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: GestureDetector(
-                      onTap: _openBreathOverlay,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: purple.withOpacity(0.18)),
-                        ),
-                        child: Row(
-                          children: [
-                            CustomPaint(size: const Size(80,40), painter: _ProtoBreathPainter(color: purple)),
-                            const SizedBox(width: 12),
-                            Expanded(child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Быстрая дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
-                                const SizedBox(height: 6),
-                                Text('Короткая практика для снижения стресса', style: TextStyle(color: textColor, fontSize: 12)),
-                              ],
-                            )),
-                            Icon(Icons.play_circle_fill, color: purple, size: 36)
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const Spacer(),
-                ],
+                ),
               ),
 
-              // ---------------- BOTTOM NAVIGATION (placed BEFORE drawers) ----------------
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: bottomInset + 10.0), // raise above system nav
+              const SizedBox(height: 8),
+
+              // Calendar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: purple.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      // header with month navigation
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left),
+                            onPressed: () => setState(() => visibleMonth = DateTime(visibleMonth.year, visibleMonth.month - 1)),
+                          ),
+                          Expanded(child: Center(child: Text('${_monthName(visibleMonth.month)} ${visibleMonth.year}', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)))),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right),
+                            onPressed: () => setState(() => visibleMonth = DateTime(visibleMonth.year, visibleMonth.month + 1)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      // days of week header (Mon..Sun)
+                      Row(
+                        children: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d) {
+                          final isWeekend = d == 'Сб' || d == 'Вс';
+                          return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? purple : textColor, fontWeight: FontWeight.w600))));
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                      // grid
+                      SizedBox(
+                        height: 260,
+                        child: GridView.builder(
+                          padding: EdgeInsets.zero,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, childAspectRatio: 1.0),
+                          itemCount: gridDates.length,
+                          itemBuilder: (context, idx) {
+                            final d = gridDates[idx];
+                            final dKey = _dateKey(d);
+                            final note = notesByDate[dKey];
+                            // days from other months: gray
+                            final isOtherMonth = d.month != visibleMonth.month;
+                            // today highlight
+                            final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+                            // note style: if note exists and note.createdAt matches date -> strong highlight,
+                            // if note exists but createdAt differs -> light highlight
+                            Color bg = Colors.transparent;
+                            if (note != null) {
+                              final created = DateTime.tryParse(note['createdAt'] as String? ?? '');
+                              if (created != null && created.year == d.year && created.month == d.month && created.day == d.day) {
+                                bg = purple.withOpacity(0.45);
+                              } else {
+                                bg = purple.withOpacity(0.22);
+                              }
+                            }
+                            return GestureDetector(
+                              onTap: () {
+                                // if tapped day belongs to another month -> switch month
+                                if (isOtherMonth) {
+                                  setState(() => visibleMonth = DateTime(d.year, d.month));
+                                  // open after small delay to allow month switch UI update
+                                  Future.delayed(const Duration(milliseconds: 150), () => _openDaySheet(d));
+                                } else {
+                                  _openDaySheet(d);
+                                }
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: bg,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    Center(child: Text('${d.day}', style: TextStyle(color: isOtherMonth ? Colors.grey : textColor))),
+                                    if (isToday) Positioned(top: 4, right: 4, child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: purple))),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // breathing card
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: GestureDetector(
+                  onTap: _openBreathOverlay,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                     decoration: BoxDecoration(
                       color: cardColor,
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6, offset: const Offset(0,2))],
+                      border: Border.all(color: purple.withOpacity(0.18)),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.home, color: _selectedIndex==0 ? purple : Colors.grey),
-                          onPressed: () { setState(()=>_selectedIndex=0); },
-                        ),
-                        // circular chat icon (message bubble circle with tail to the right)
-                        GestureDetector(
-                          onTap: ()=> setState(()=>_selectedIndex=1),
-                          child: Container(
-                            decoration: BoxDecoration(color: _selectedIndex==1 ? purple : Colors.white, shape: BoxShape.circle),
-                            padding: const EdgeInsets.all(10),
-                            child: Icon(Icons.message, color: _selectedIndex==1 ? Colors.white : Colors.grey, size: 28),
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.person_outline, color: _selectedIndex==2 ? purple : Colors.grey),
-                          onPressed: () { setState(()=>_selectedIndex=2); },
-                        ),
+                        CustomPaint(size: const Size(80,40), painter: _ProtoBreathPainter(color: purple)),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Быстрая дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+                            const SizedBox(height: 6),
+                            Text('Короткая практика для снижения стресса', style: TextStyle(color: textColor, fontSize: 12)),
+                          ],
+                        )),
+                        Icon(Icons.play_circle_fill, color: purple, size: 36)
                       ],
                     ),
                   ),
                 ),
               ),
 
-              // ---------------- PROFILE DRAWER (placed AFTER bottom nav so it overlays it) ----------------
-              if (isProfileOpen) ...[
-                // overlay outside the drawer (tap outside to close)
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(()=>isProfileOpen=false),
-                    child: Container(color: Colors.black.withOpacity(0.4)),
-                  ),
-                ),
-                // sliding drawer itself
-                Positioned(
-                  left: isProfileOpen ? 0 : -panelWidth,
-                  top: 0,
-                  bottom: 0,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeInOut,
-                    width: panelWidth,
-                    child: SafeArea(
-                      child: Container(
-                        color: cardColor,
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header: name + theme toggle at top-right
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(fullName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)),
-                                ),
-                                IconButton(
-                                  icon: Icon(isDarkMode ? Icons.wb_sunny : Icons.nightlight_round, color: purple),
-                                  onPressed: () async {
-                                    setState(()=>isDarkMode=!isDarkMode);
-                                    final prefs = await SharedPreferences.getInstance();
-                                    prefs.setBool('isDarkMode', isDarkMode);
-                                  },
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text('Пол: ---', style: TextStyle(color: textColor)),
-                            Text('Возраст: ---', style: TextStyle(color: textColor)),
-                            Text('Email: ---', style: TextStyle(color: textColor)),
-                            const Spacer(),
-                            // removed "Profile" button per request; keep Settings and Logout
-                            OutlinedButton(onPressed: (){}, child: const Text('Настройки')),
-                            const SizedBox(height: 8),
-                            ElevatedButton.icon(
-                              onPressed: () async {
-                                // logout flow
-                                try {
-                                  await Supabase.instance.client.auth.signOut();
-                                } catch (_) {}
-                                final prefs = await SharedPreferences.getInstance();
-                                await prefs.clear();
-                                if (context.mounted) {
-                                  Navigator.of(context).pushReplacementNamed('/');
-                                }
-                              },
-                              icon: const Icon(Icons.exit_to_app),
-                              label: const Text('Выйти'),
-                              style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-
-              // ---------------- NOTIFICATIONS PANEL (right side; placed after profile too) ----------------
-              if (isNotificationsOpen) ...[
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(()=>isNotificationsOpen=false),
-                    child: Container(color: Colors.black.withOpacity(0.05)),
-                  ),
-                ),
-                Positioned(
-                  right: isNotificationsOpen ? 0 : -MediaQuery.of(context).size.width,
-                  top: 0,
-                  bottom: 0,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeInOut,
-                    width: MediaQuery.of(context).size.width,
-                    child: SafeArea(
-                      child: Container(
-                        color: cardColor,
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                IconButton(icon: Icon(Icons.arrow_back, color: purple), onPressed: ()=>setState(()=>isNotificationsOpen=false)),
-                                const SizedBox(width: 8),
-                                Text('Уведомления', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
-                                const Spacer(),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Expanded(child: Center(child: Text('Уведомлений пока нет', style: TextStyle(color: textColor)))),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              const Spacer(),
             ],
           ),
-        )
+
+          // --------------- bottom navigation (above system nav) ---------------
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomInset + 10.0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6, offset: const Offset(0,2))],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    IconButton(icon: Icon(Icons.home, color: _selectedIndex==0 ? purple : Colors.grey), onPressed: () => setState(()=>_selectedIndex=0)),
+                    GestureDetector(
+                      onTap: () => setState(()=>_selectedIndex=1),
+                      child: Container(
+                        decoration: BoxDecoration(color: _selectedIndex==1 ? purple : Colors.white, shape: BoxShape.circle),
+                        padding: const EdgeInsets.all(10),
+                        child: Icon(Icons.message, color: _selectedIndex==1 ? Colors.white : Colors.grey, size: 28),
+                      ),
+                    ),
+                    IconButton(icon: Icon(Icons.person_outline, color: _selectedIndex==2 ? purple : Colors.grey), onPressed: () => setState(()=>_selectedIndex=2)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // --------------- profile drawer (overlay) ---------------
+          if (isProfileOpen) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(()=>isProfileOpen=false),
+                child: Container(color: Colors.black.withOpacity(0.4)),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeInOut,
+                width: panelWidth,
+                child: SafeArea(
+                  child: Container(
+                    color: cardColor,
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // header: name + theme toggle
+                        Row(
+                          children: [
+                            Expanded(child: Text(fullName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor))),
+                            IconButton(icon: Icon(isDarkTheme ? Icons.wb_sunny : Icons.nightlight_round, color: purple), onPressed: () async {
+                              final prefs = await _prefs();
+                              prefs.setBool('isDarkTheme', !isDarkTheme);
+                              setState(()=>isDarkTheme = !isDarkTheme);
+                            }),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text('Пол: ---', style: TextStyle(color: textColor)),
+                        Text('Возраст: ---', style: TextStyle(color: textColor)),
+                        Text('Email: ---', style: TextStyle(color: textColor)),
+                        const Spacer(),
+                        OutlinedButton(onPressed: () {}, child: const Text('Настройки')),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            try { await Supabase.instance.client.auth.signOut(); } catch (_) {}
+                            final prefs = await _prefs();
+                            await prefs.clear();
+                            if (context.mounted) Navigator.of(context).pushReplacementNamed('/');
+                          },
+                          icon: const Icon(Icons.exit_to_app),
+                          label: const Text('Выйти'),
+                          style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
+  }
+
+  String _monthName(int m) {
+    const names = ['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    return names[m];
   }
 }
 
+// ----------------- Breathing custom painters & widget -----------------
 
-/// Simple custom painter for the compact breathing preview (a broken line)
 class _ProtoBreathPainter extends CustomPainter {
   final Color color;
   _ProtoBreathPainter({required this.color});
@@ -691,83 +675,12 @@ class _ProtoBreathPainter extends CustomPainter {
     path.quadraticBezierTo(size.width*0.25, size.height*0.2, size.width*0.5, size.height*0.7);
     path.quadraticBezierTo(size.width*0.75, size.height*1.1, size.width, size.height*0.6);
     canvas.drawPath(path, paint);
-    // dot
     final dotPaint = Paint()..color=color;
     canvas.drawCircle(Offset(size.width*0.1, size.height*0.65), 4, dotPaint);
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Full breathing widget — animates a dot along a path (simple)
-class BreathingWidget extends StatefulWidget {
-  final AnimationController controller;
-  final Color color;
-  const BreathingWidget({required this.controller, required this.color, super.key});
-  @override
-  State<BreathingWidget> createState() => _BreathingWidgetState();
-}
-
-class _BreathingWidgetState extends State<BreathingWidget> {
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.repeat(reverse: true);
-  }
-  @override
-  void dispose() {
-    widget.controller.stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size.width * 0.9;
-    return SizedBox(
-      width: size,
-      height: size*0.5,
-      child: Stack(
-        children: [
-          Center(
-            child: CustomPaint(
-              size: Size(size, size*0.5),
-              painter: _BreathPathPainter(color: widget.color),
-            ),
-          ),
-          // moving dot using AnimatedBuilder
-          AnimatedBuilder(
-            animation: widget.controller,
-            builder: (context, child) {
-              final t = widget.controller.value; // 0..1
-              // simple mapping along 3 segments
-              final w = size;
-              final h = size*0.5;
-              // piecewise param
-              Offset p;
-              if (t < 0.33) {
-                final local = t/0.33;
-                p = Offset(w*0.0 + (w*0.5 - 0.0)*local, h*0.7 - (h*0.5)*local);
-              } else if (t < 0.66) {
-                final local = (t-0.33)/0.33;
-                p = Offset(w*0.5 + (w*0.9 - w*0.5)*local, h*0.2 + (h*0.5)*local);
-              } else {
-                final local = (t-0.66)/0.34;
-                p = Offset(w*0.9 + (w - w*0.9)*local, h*0.7 - (h*0.1)*local);
-              }
-              return Positioned(left: p.dx-8, top: p.dy-8, child: Container(width:16, height:16, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)));
-            },
-          ),
-          // small timer / label
-          Positioned(top: 8, right: 16, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal:8, vertical:4),
-            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-            child: const Text('00:45', style: TextStyle(color: Colors.white, fontSize: 12)),
-          ))
-        ],
-      ),
-    );
-  }
 }
 
 class _BreathPathPainter extends CustomPainter {
@@ -784,4 +697,74 @@ class _BreathPathPainter extends CustomPainter {
   }
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Full breathing UI: moving dot along path and phase label
+class _BreathingFull extends StatefulWidget {
+  final _HomeScreenState controller;
+  final AnimationController animation;
+  const _BreathingFull({required this.controller, required this.animation, super.key});
+
+  @override
+  State<_BreathingFull> createState() => _BreathingFullState();
+}
+
+class _BreathingFullState extends State<_BreathingFull> with SingleTickerProviderStateMixin {
+  @override
+  void initState() {
+    super.initState();
+    // animation already controlled by parent (breathController)
+    widget.animation.repeat();
+  }
+
+  @override
+  void dispose() {
+    widget.animation.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size.width * 0.9;
+    return SizedBox(
+      width: size,
+      height: size * 0.6,
+      child: Stack(
+        children: [
+          Center(child: CustomPaint(size: Size(size, size*0.5), painter: _BreathPathPainter(color: widget.controller.purple))),
+          AnimatedBuilder(
+            animation: widget.animation,
+            builder: (context, _) {
+              final t = widget.animation.value; // 0..1
+              final w = size; final h = size*0.5;
+              Offset p;
+              if (t < 0.33) {
+                final local = t/0.33;
+                p = Offset(w*0.0 + (w*0.5 - 0.0)*local, h*0.7 - (h*0.5)*local);
+              } else if (t < 0.66) {
+                final local = (t-0.33)/0.33;
+                p = Offset(w*0.5 + (w*0.9 - w*0.5)*local, h*0.2 + (h*0.5)*local);
+              } else {
+                final local = (t-0.66)/0.34;
+                p = Offset(w*0.9 + (w - w*0.9)*local, h*0.7 - (h*0.1)*local);
+              }
+              return Positioned(left: p.dx-10, top: p.dy-10, child: Container(width:20, height:20, decoration: BoxDecoration(color: widget.controller.purple, shape: BoxShape.circle)));
+            },
+          ),
+          Positioned(top: 8, right: 16, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal:8, vertical:4),
+            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
+            child: const Text('00:45', style: TextStyle(color: Colors.white, fontSize: 12)),
+          )),
+          Positioned(bottom: 16, left: 0, right: 0, child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              decoration: BoxDecoration(color: widget.controller.purple, borderRadius: BorderRadius.circular(12)),
+              child: Text('Стоп', style: const TextStyle(color: Colors.white, fontSize: 16)),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
 }
