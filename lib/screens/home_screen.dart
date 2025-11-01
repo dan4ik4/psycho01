@@ -1,4 +1,4 @@
-// lib/home_screen.dart
+// lib/screens/home_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,10 +17,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 /// NOTE:
-/// - This HomeScreen uses SharedPreferences to store:
-///   - 'full_name' : string (user full name)
-///   - 'note_YYYY-MM-DD' : json string { "text": "...", "createdAt": "ISO" }
-/// - No external calendar package — simple month grid implemented here.
+/// This file preserves your original main UI (calendar, breathing widget, bottom nav),
+/// but fixes the left drawer so it reliably appears above the bottom nav and removes the
+/// "Profile" button from the drawer.
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   bool isDarkMode = false;
@@ -205,23 +204,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 // confirm delete once
                                 final confirmed = await showDialog<bool>(
                                   context: context,
-                                  builder: (dialogContext) => AlertDialog(
+                                  builder: (dialogCtx) => AlertDialog(
                                     title: const Text('Удалить заметку?'),
                                     content: const Text('Вы действительно хотите удалить заметку?'),
                                     actionsAlignment: MainAxisAlignment.start,
                                     actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dialogContext, true),
-                                        child: const Text('Да'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dialogContext, false),
-                                        child: const Text('Нет'),
-                                      ),
+                                      TextButton(onPressed: () => Navigator.pop(dialogCtx, true), child: const Text('Да')),
+                                      TextButton(onPressed: () => Navigator.pop(dialogCtx, false), child: const Text('Нет')),
                                     ],
                                   ),
                                 );
-
                                 if (confirmed == true) {
                                   await _deleteNoteForDay(day);
                                   Navigator.pop(context);
@@ -313,6 +305,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       gridDates[pos] = DateTime(now.year, now.month, i+1);
     }
 
+    // compute panel width once
+    final double panelWidth = MediaQuery.of(context).size.width * 0.8;
+
     return AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         child: Scaffold(
@@ -320,6 +315,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           backgroundColor: bgColor,
           body: Stack(
             children: [
+              // ---------------- MAIN COLUMN (top bar, content) ----------------
               Column(
                 children: [
                   // top bar
@@ -354,7 +350,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
 
                   const SizedBox(height: 10),
-                  // logo higher + Welcome handled by top bar and greeting below
                   // Greeting card
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -378,12 +373,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
                   const SizedBox(height: 8),
 
-                  // Calendar widget area (calendar "Календарь позитивных моментов")
+                  // Calendar widget area
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: purple.withOpacity(0.08), // widget background colored
+                        color: purple.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       padding: const EdgeInsets.all(12),
@@ -421,18 +416,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 final d = gridDates[idx];
                                 if (d==null) return const SizedBox.shrink();
                                 final note = _noteForDay(d);
-                                // Determine decoration:
-                                // - if note exists AND note.createdAt date == d -> mark as "today note" style A
-                                // - if note exists but createdAt date != d -> style B
                                 Color bg = Colors.transparent;
-                                BoxBorder? border;
                                 final isToday = d.year==now.year && d.month==now.month && d.day==now.day;
                                 if (note!=null) {
                                   final created = DateTime.tryParse(note['createdAt'] as String? ?? '');
                                   if (created!=null && created.year==d.year && created.month==d.month && created.day==d.day) {
-                                    bg = purple.withOpacity(0.45); // same-day note (strong highlight)
+                                    bg = purple.withOpacity(0.45);
                                   } else {
-                                    bg = purple.withOpacity(0.22); // note exists but created on different day (lighter)
+                                    bg = purple.withOpacity(0.22);
                                   }
                                 }
                                 return GestureDetector(
@@ -477,7 +468,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                         child: Row(
                           children: [
-                            // simple icon representation of the "broken line"
                             CustomPaint(size: const Size(80,40), painter: _ProtoBreathPainter(color: purple)),
                             const SizedBox(width: 12),
                             Expanded(child: Column(
@@ -499,134 +489,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ],
               ),
 
-              // ---------- REPLACED PROFILE DRAWER & OVERLAY ----------
-              // 🟣 Профильная панель (перекрывает всё, включая нижнюю навигацию)
-              if (isProfileOpen) ...[
-                // Тёмный фон-затемнение
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTap: () => setState(() => isProfileOpen = false),
-                    child: Container(color: Colors.black.withOpacity(0.4)),
-                  ),
-                ),
-
-                // Сама панель
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  right: 0, // 🟣 чтобы перекрывала всю ширину, включая нижнюю панель
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: 0.8,
-                    child: Container(
-                      color: cardColor,
-                      padding: const EdgeInsets.all(18),
-                      child: SafeArea(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 🟣 Верхняя строка с именем и переключателем темы
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    fullName,
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: textColor,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    isDarkMode ? Icons.wb_sunny : Icons.nightlight_round,
-                                    color: purple,
-                                  ),
-                                  onPressed: () async {
-                                    setState(() => isDarkMode = !isDarkMode);
-                                    final prefs = await SharedPreferences.getInstance();
-                                    prefs.setBool('isDarkMode', isDarkMode);
-                                  },
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 8),
-                            Text('Пол: ---', style: TextStyle(color: textColor)),
-                            Text('Возраст: ---', style: TextStyle(color: textColor)),
-                            Text('Email: ---', style: TextStyle(color: textColor)),
-
-                            const Spacer(),
-                            OutlinedButton(
-                              onPressed: () {},
-                              child: const Text('Настройки'),
-                            ),
-                            const SizedBox(height: 8),
-                            OutlinedButton(
-                              onPressed: () async {
-                                final prefs = await SharedPreferences.getInstance();
-                                await prefs.clear();
-                                setState(() {
-                                  fullName = 'Пользователь';
-                                });
-                              },
-                              child: const Text('Выйти'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-
-              // ---------- REPLACED NOTIFICATIONS PANEL ----------
-              if (isNotificationsOpen) ...[
-                // overlay that closes notifications when tapping outside
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTap: () => setState(()=>isNotificationsOpen=false),
-                    child: Container(color: Colors.black.withOpacity(0.05)),
-                  ),
-                ),
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  right: isNotificationsOpen ? 0 : -MediaQuery.of(context).size.width,
-                  top: 0,
-                  bottom: 0,
-                  child: SizedBox(
-                    width: MediaQuery.of(context).size.width,
-                    child: SafeArea(
-                      child: Container(
-                        color: cardColor,
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                IconButton(icon: Icon(Icons.arrow_back, color: purple), onPressed: ()=>setState(()=>isNotificationsOpen=false)),
-                                const SizedBox(width: 8),
-                                Text('Уведомления', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
-                                const Spacer(),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Expanded(child: Center(child: Text('Уведомлений пока нет', style: TextStyle(color: textColor)))),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-
-              // bottom navigation — raised above system nav
+              // ---------------- BOTTOM NAVIGATION (placed BEFORE drawers) ----------------
               Align(
                 alignment: Alignment.bottomCenter,
                 child: Padding(
@@ -664,6 +527,121 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
               ),
+
+              // ---------------- PROFILE DRAWER (placed AFTER bottom nav so it overlays it) ----------------
+              if (isProfileOpen) ...[
+                // overlay outside the drawer (tap outside to close)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(()=>isProfileOpen=false),
+                    child: Container(color: Colors.black.withOpacity(0.4)),
+                  ),
+                ),
+                // sliding drawer itself
+                Positioned(
+                  left: isProfileOpen ? 0 : -panelWidth,
+                  top: 0,
+                  bottom: 0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeInOut,
+                    width: panelWidth,
+                    child: SafeArea(
+                      child: Container(
+                        color: cardColor,
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header: name + theme toggle at top-right
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(fullName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)),
+                                ),
+                                IconButton(
+                                  icon: Icon(isDarkMode ? Icons.wb_sunny : Icons.nightlight_round, color: purple),
+                                  onPressed: () async {
+                                    setState(()=>isDarkMode=!isDarkMode);
+                                    final prefs = await SharedPreferences.getInstance();
+                                    prefs.setBool('isDarkMode', isDarkMode);
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Пол: ---', style: TextStyle(color: textColor)),
+                            Text('Возраст: ---', style: TextStyle(color: textColor)),
+                            Text('Email: ---', style: TextStyle(color: textColor)),
+                            const Spacer(),
+                            // removed "Profile" button per request; keep Settings and Logout
+                            OutlinedButton(onPressed: (){}, child: const Text('Настройки')),
+                            const SizedBox(height: 8),
+                            ElevatedButton.icon(
+                              onPressed: () async {
+                                // logout flow
+                                try {
+                                  await Supabase.instance.client.auth.signOut();
+                                } catch (_) {}
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.clear();
+                                if (context.mounted) {
+                                  Navigator.of(context).pushReplacementNamed('/');
+                                }
+                              },
+                              icon: const Icon(Icons.exit_to_app),
+                              label: const Text('Выйти'),
+                              style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              // ---------------- NOTIFICATIONS PANEL (right side; placed after profile too) ----------------
+              if (isNotificationsOpen) ...[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(()=>isNotificationsOpen=false),
+                    child: Container(color: Colors.black.withOpacity(0.05)),
+                  ),
+                ),
+                Positioned(
+                  right: isNotificationsOpen ? 0 : -MediaQuery.of(context).size.width,
+                  top: 0,
+                  bottom: 0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeInOut,
+                    width: MediaQuery.of(context).size.width,
+                    child: SafeArea(
+                      child: Container(
+                        color: cardColor,
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                IconButton(icon: Icon(Icons.arrow_back, color: purple), onPressed: ()=>setState(()=>isNotificationsOpen=false)),
+                                const SizedBox(width: 8),
+                                Text('Уведомления', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                                const Spacer(),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(child: Center(child: Text('Уведомлений пока нет', style: TextStyle(color: textColor)))),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         )
