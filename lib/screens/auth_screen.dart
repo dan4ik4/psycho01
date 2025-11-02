@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_screen.dart';
+import 'main_navigation_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   @override
@@ -54,11 +55,11 @@ class _AuthScreenState extends State<AuthScreen> {
         );
       }
 
-      // 🟣 После успешного входа или регистрации — переход на домашний экран
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => HomeScreen()),
+        MaterialPageRoute(builder: (_) => MainNavigationScreen()),
       );
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: ${e.toString()}')),
@@ -365,10 +366,11 @@ class _AuthScreenState extends State<AuthScreen> {
                 mini: true,
                 backgroundColor: purple,
                 onPressed: () {
-                  Navigator.push(
+                  Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => HomeScreen()),
+                    MaterialPageRoute(builder: (_) => MainNavigationScreen()),
                   );
+
                 },
                 child: const Text('test', style: TextStyle(fontSize: 12, color: Colors.white)),
               ),

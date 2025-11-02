@@ -358,10 +358,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return Scaffold(
       backgroundColor: bgColor,
-      body: Stack(
-        children: [
-          Column(
+        body: Stack(
             children: [
+        SafeArea(
+        child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          children: [
               // Top bar
               Container(
                 height: 100,
@@ -555,43 +558,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
 
-              const Spacer(),
-            ],
-          ),
+            const SizedBox(height: 80),
+          ],
+        ),
+        ),
+        ),
 
-          // --------------- bottom navigation (above system nav) ---------------
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: bottomInset + 10.0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                margin: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6, offset: const Offset(0,2))],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    IconButton(icon: Icon(Icons.home, color: _selectedIndex==0 ? purple : Colors.grey), onPressed: () => setState(()=>_selectedIndex=0)),
-                    GestureDetector(
-                      onTap: () => setState(()=>_selectedIndex=1),
-                      child: Container(
-                        decoration: BoxDecoration(color: _selectedIndex==1 ? purple : Colors.white, shape: BoxShape.circle),
-                        padding: const EdgeInsets.all(10),
-                        child: Icon(Icons.message, color: _selectedIndex==1 ? Colors.white : Colors.grey, size: 28),
-                      ),
-                    ),
-                    IconButton(icon: Icon(Icons.person_outline, color: _selectedIndex==2 ? purple : Colors.grey), onPressed: () => setState(()=>_selectedIndex=2)),
-                  ],
-                ),
-              ),
-            ),
-          ),
 
-          // --------------- profile drawer (overlay) ---------------
+
+            // --------------- profile drawer (overlay) ---------------
           if (isProfileOpen) ...[
             Positioned.fill(
               child: GestureDetector(
