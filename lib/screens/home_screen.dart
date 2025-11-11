@@ -37,8 +37,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // breathing animation
   late AnimationController breathController;
 
-  // bottom nav
+  // bottom nav (kept for completeness)
   int _selectedIndex = 0;
+
+  // Calendar animation helpers
+  int _calendarSlideDirection = 0; // -1 = to left (prev), +1 = to right (next)
+  final _monthSwitcherKey = GlobalKey();
 
   @override
   void initState() {
@@ -144,17 +148,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   DateTime _firstDayOfMonth(DateTime d) => DateTime(d.year, d.month, 1);
   int _daysInMonth(DateTime d) => DateTime(d.year, d.month + 1, 0).day;
 
-  // Build grid (Monday first)
+  // Build grid (Monday first) — keep original logic but we will display only first 35 items (5 rows)
   List<DateTime> _buildGridDates(DateTime month) {
     final first = _firstDayOfMonth(month);
-    // weekday: Mon=1..Sun=7; we want Mon..Sun
     final int startOffset = first.weekday - 1; // 0 if Mon, 6 if Sun
-    final total = 42; // 6 rows x 7 cols
+    final total = 42; // we still compute 6x7 grid, but will show 35 cells to have 5 rows
     final List<DateTime> dates = List.generate(total, (i) {
       final dayIndex = i - startOffset;
       return DateTime(month.year, month.month, 1).add(Duration(days: dayIndex));
     });
     return dates;
+  }
+
+  // function to change visibleMonth with direction (for animation)
+  void _changeMonth({required int delta}) {
+    setState(() {
+      _calendarSlideDirection = delta > 0 ? 1 : -1;
+      visibleMonth = DateTime(visibleMonth.year, visibleMonth.month + delta);
+    });
   }
 
   // ------------------- UI: Day sheet -------------------
@@ -356,31 +367,241 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // panel width
     final panelWidth = MediaQuery.of(context).size.width * 0.8;
 
+    // --------------------------
+    // Настраиваемые параметры:
+    // --------------------------
+    final double topBarHeight = 72; // <-- регулируй высоту верхней плашки
+    final double calendarHeight = 230; // <-- регулируй высоту календаря (5 строк)
+    // --------------------------
+
     return Scaffold(
       backgroundColor: bgColor,
-        body: Stack(
-            children: [
-        SafeArea(
-        child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          children: [
-              // Top bar
-              Container(
-                height: 100,
-                color: cardColor,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+      // Мы используем Stack: верхняя плашка — Positioned (фикс.), контент — с отступом сверху.
+      body: Stack(
+        children: [
+          // ---------- MAIN SCROLLABLE CONTENT ----------
+          Positioned.fill(
+            top: topBarHeight + 10, // контент начинается ниже закреплённой плашки
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+
+                    // Greeting card (оставил без изменений)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Здравствуйте, $fullName 👋',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: purple,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Рады видеть вас снова!',
+                              style: TextStyle(fontSize: 16, color: textColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Calendar container with swipe + arrow + animation
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: purple.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          children: [
+                            // header with month navigation (AnimatedSwitcher)
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.chevron_left),
+                                  onPressed: () {
+                                    _calendarSlideDirection = -1;
+                                    _changeMonth(delta: -1);
+                                  },
+                                ),
+                                Expanded(
+                                  child: Center(
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 360),
+                                      transitionBuilder: (Widget child, Animation<double> anim) {
+                                        final offsetAnim = anim.drive(Tween<Offset>(
+                                          begin: Offset(0.3 * (_calendarSlideDirection.toDouble()), 0.0),
+                                          end: Offset.zero,
+                                        ));
+                                        return SlideTransition(position: offsetAnim, child: FadeTransition(opacity: anim, child: child));
+                                      },
+                                      child: Text(
+                                        '${_monthName(visibleMonth.month)} ${visibleMonth.year}',
+                                        key: ValueKey<int>(visibleMonth.month + visibleMonth.year * 100),
+                                        style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.chevron_right),
+                                  onPressed: () {
+                                    _calendarSlideDirection = 1;
+                                    _changeMonth(delta: 1);
+                                  },
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            // days of week header (Mon..Sun) — оставил как есть
+                            Row(
+                              children: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d) {
+                                final isWeekend = d == 'Сб' || d == 'Вс';
+                                return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? purple : textColor, fontWeight: FontWeight.w600))));
+                              }).toList(),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // GRID with swipe detection and animated month change (we show exactly 35 cells = 5 rows)
+                            GestureDetector(
+                              onHorizontalDragEnd: (details) {
+                                if (details.primaryVelocity == null) return;
+                                if (details.primaryVelocity! < -200) {
+                                  // swipe left -> next month
+                                  _calendarSlideDirection = 1;
+                                  _changeMonth(delta: 1);
+                                } else if (details.primaryVelocity! > 200) {
+                                  // swipe right -> prev month
+                                  _calendarSlideDirection = -1;
+                                  _changeMonth(delta: -1);
+                                }
+                              },
+                              child: SizedBox(
+                                height: calendarHeight, // <-- высота календаря (5 строк)
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 360),
+                                  transitionBuilder: (child, anim) {
+                                    final offsetBegin = Offset(0.3 * _calendarSlideDirection, 0);
+                                    final offsetAnim = anim.drive(Tween<Offset>(begin: offsetBegin, end: Offset.zero).chain(CurveTween(curve: Curves.easeOut)));
+                                    return SlideTransition(position: offsetAnim, child: FadeTransition(opacity: anim, child: child));
+                                  },
+                                  child: _buildCalendarGrid(
+                                    key: ValueKey<String>('grid_${visibleMonth.year}_${visibleMonth.month}'),
+                                    gridDates: gridDates,
+                                    calendarHeight: calendarHeight,
+                                    textColor: textColor,
+                                    now: now,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // breathing card (untouched)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: GestureDetector(
+                        onTap: _openBreathOverlay,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: purple.withOpacity(0.18)),
+                          ),
+                          child: Row(
+                            children: [
+                              CustomPaint(size: const Size(80,40), painter: _ProtoBreathPainter(color: purple)),
+                              const SizedBox(width: 12),
+                              Expanded(child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Быстрая дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
+                                  const SizedBox(height: 6),
+                                  Text('Короткая практика для снижения стресса', style: TextStyle(color: textColor, fontSize: 12)),
+                                ],
+                              )),
+                              Icon(Icons.play_circle_fill, color: purple, size: 36)
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 80),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ---------- FIXED TOP BAR (ONLY ON THIS SCREEN) ----------
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: topBarHeight,
+              color: cardColor,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SafeArea(
+                bottom: false,
                 child: Row(
                   children: [
-                    // menu
                     IconButton(
-                      icon: Icon(Icons.menu, color: purple, size: 30),
+                      icon: Icon(Icons.menu, color: purple, size: 28),
                       onPressed: () => setState(() => isProfileOpen = true),
                     ),
-                    const Spacer(),
-                    Image.asset('assets/images/lotus.png', height: 60),
-                    const Spacer(),
-                    // star + points button
+                    // Spacer removed because we want perfect center for lotus — use Expanded + Stack to absolutely center
+                    Expanded(
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // invisible row so left and right areas keep their sizes
+                          Row(
+                            children: [
+                              const SizedBox(width: 48), // room for menu
+                              const Spacer(),
+                              const SizedBox(width: 110), // room for right widget
+                            ],
+                          ),
+                          // centered lotus
+                          Align(
+                            alignment: Alignment.center,
+                            child: Image.asset('assets/images/lotus.png', height: topBarHeight * 0.55),
+                          ),
+                        ],
+                      ),
+                    ),
                     GestureDetector(
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopPlaceholderScreen()));
@@ -404,169 +625,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ],
                 ),
               ),
+            ),
+          ),
 
-              const SizedBox(height: 10),
-
-              // Greeting card
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Welcome', style: TextStyle(color: purple, fontSize: 26, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      Text('Добро пожаловать, $fullName', style: TextStyle(fontSize: 16, color: textColor)),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // Calendar
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: purple.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    children: [
-                      // header with month navigation
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.chevron_left),
-                            onPressed: () => setState(() => visibleMonth = DateTime(visibleMonth.year, visibleMonth.month - 1)),
-                          ),
-                          Expanded(child: Center(child: Text('${_monthName(visibleMonth.month)} ${visibleMonth.year}', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)))),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right),
-                            onPressed: () => setState(() => visibleMonth = DateTime(visibleMonth.year, visibleMonth.month + 1)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      // days of week header (Mon..Sun)
-                      Row(
-                        children: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d) {
-                          final isWeekend = d == 'Сб' || d == 'Вс';
-                          return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? purple : textColor, fontWeight: FontWeight.w600))));
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 8),
-                      // grid
-                      SizedBox(
-                        height: 260,
-                        child: GridView.builder(
-                          padding: EdgeInsets.zero,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, childAspectRatio: 1.0),
-                          itemCount: gridDates.length,
-                          itemBuilder: (context, idx) {
-                            final d = gridDates[idx];
-                            final dKey = _dateKey(d);
-                            final note = notesByDate[dKey];
-                            // days from other months: gray
-                            final isOtherMonth = d.month != visibleMonth.month;
-                            // today highlight
-                            final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
-                            // note style: if note exists and note.createdAt matches date -> strong highlight,
-                            // if note exists but createdAt differs -> light highlight
-                            Color bg = Colors.transparent;
-                            if (note != null) {
-                              final created = DateTime.tryParse(note['createdAt'] as String? ?? '');
-                              if (created != null && created.year == d.year && created.month == d.month && created.day == d.day) {
-                                bg = purple.withOpacity(0.45);
-                              } else {
-                                bg = purple.withOpacity(0.22);
-                              }
-                            }
-                            return GestureDetector(
-                              onTap: () {
-                                // if tapped day belongs to another month -> switch month
-                                if (isOtherMonth) {
-                                  setState(() => visibleMonth = DateTime(d.year, d.month));
-                                  // open after small delay to allow month switch UI update
-                                  Future.delayed(const Duration(milliseconds: 150), () => _openDaySheet(d));
-                                } else {
-                                  _openDaySheet(d);
-                                }
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: bg,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Stack(
-                                  children: [
-                                    Center(child: Text('${d.day}', style: TextStyle(color: isOtherMonth ? Colors.grey : textColor))),
-                                    if (isToday) Positioned(top: 4, right: 4, child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: purple))),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // breathing card
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: GestureDetector(
-                  onTap: _openBreathOverlay,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: purple.withOpacity(0.18)),
-                    ),
-                    child: Row(
-                      children: [
-                        CustomPaint(size: const Size(80,40), painter: _ProtoBreathPainter(color: purple)),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Быстрая дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
-                            const SizedBox(height: 6),
-                            Text('Короткая практика для снижения стресса', style: TextStyle(color: textColor, fontSize: 12)),
-                          ],
-                        )),
-                        Icon(Icons.play_circle_fill, color: purple, size: 36)
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 80),
-          ],
-        ),
-        ),
-        ),
-
-
-
-            // --------------- profile drawer (overlay) ---------------
+          // --------------- profile drawer (overlay) ---------------
           if (isProfileOpen) ...[
             Positioned.fill(
               child: GestureDetector(
@@ -627,6 +689,70 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  // helper that builds the calendar grid (separated to keep build tidy)
+  Widget _buildCalendarGrid({
+    required Key key,
+    required List<DateTime> gridDates,
+    required double calendarHeight,
+    required Color textColor,
+    required DateTime now,
+  }) {
+    // we will show only first 35 cells (5 rows x 7 cols)
+    final showCount = 35;
+    return Container(
+      key: key,
+      child: GridView.builder(
+        padding: EdgeInsets.zero,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, childAspectRatio: 1.0),
+        itemCount: showCount,
+        itemBuilder: (context, idx) {
+          if (idx >= gridDates.length) return const SizedBox.shrink();
+          final d = gridDates[idx];
+          final dKey = _dateKey(d);
+          final note = notesByDate[dKey];
+          final isOtherMonth = d.month != visibleMonth.month;
+          final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+
+          Color bg = Colors.transparent;
+          if (note != null) {
+            final created = DateTime.tryParse(note['createdAt'] as String? ?? '');
+            if (created != null && created.year == d.year && created.month == d.month && created.day == d.day) {
+              bg = purple.withOpacity(0.45);
+            } else {
+              bg = purple.withOpacity(0.22);
+            }
+          }
+
+          return GestureDetector(
+            onTap: () {
+              if (isOtherMonth) {
+                // jump to that month and then open day sheet
+                setState(() => visibleMonth = DateTime(d.year, d.month));
+                Future.delayed(const Duration(milliseconds: 150), () => _openDaySheet(d));
+              } else {
+                _openDaySheet(d);
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Stack(
+                children: [
+                  Center(child: Text('${d.day}', style: TextStyle(color: isOtherMonth ? Colors.grey : textColor))),
+                  if (isToday) Positioned(top: 4, right: 4, child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: purple))),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
