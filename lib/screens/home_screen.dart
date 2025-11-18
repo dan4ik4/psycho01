@@ -1,4 +1,5 @@
 // lib/screens/home_screen.dart
+import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -69,6 +70,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ------------------- Storage helpers -------------------
   String _dateKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+// ------------------- Storage helpers (REPLACEMENT) -------------------
+
+// Note data model helper: each date key stores a list of note objects:
+// {'id': '<uuid or timestamp>', 'text': '...', 'createdAt': 'iso'} stored as JSON array under 'notes_YYYY-MM-DD'
+  String _notesKeyForDate(DateTime d) => 'notes_${_dateKey(d)}';
 
   Future<void> _loadAll() async {
     final prefs = await _prefs();
@@ -90,19 +96,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
     } catch (_) {}
 
-    // load notes
+    // load notes: now each key 'notes_YYYY-MM-DD' contains JSON array of notes
     final keys = prefs.getKeys();
     final Map<String, Map<String, dynamic>> tmp = {};
     for (final k in keys) {
-      if (k.startsWith('note_')) {
+      if (k.startsWith('notes_')) {
         try {
           final raw = prefs.getString(k);
           if (raw != null) {
-            final map = jsonDecode(raw) as Map<String, dynamic>;
-            final dateKey = k.substring(5);
+            final List<dynamic> arr = jsonDecode(raw) as List<dynamic>;
+            // store as map with dateKey -> {'items': [...]} to keep backward compatibility
+            final dateKey = k.substring(6); // remove 'notes_'
+            // keep only latest item for quick existing['text'] uses elsewhere (legacy), but store full list
             tmp[dateKey] = {
-              'text': map['text'] ?? '',
-              'createdAt': map['createdAt'] ?? '',
+              'items': arr.map((e) => e as Map<String, dynamic>).toList(),
+              // legacy compatibility: last created
+              'text': arr.isNotEmpty ? (arr.last['text'] ?? '') : '',
+              'createdAt': arr.isNotEmpty ? (arr.last['createdAt'] ?? '') : '',
             };
           }
         } catch (_) {}
@@ -111,37 +121,116 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() => notesByDate = tmp);
   }
 
-  Future<void> _saveNoteForDay(DateTime day, String text) async {
-    final prefs = await _prefs();
-    final key = _dateKey(day);
-    final nowIso = DateTime.now().toIso8601String();
-    final data = jsonEncode({'text': text, 'createdAt': nowIso});
-    await prefs.setString('note_$key', data);
-    // award points only once per date: check flag
-    final awardedKey = 'points_awarded_$key';
-    final alreadyAwarded = prefs.getBool(awardedKey) ?? false;
+// generate a simple unique id (timestamp based)
+  String _noteId() => DateTime.now().microsecondsSinceEpoch.toString();
 
-    // award only if note created today (same date) and not already awarded
+// Add a new note to a day
+  Future<void> _addNoteForDay(DateTime day, String text) async {
+    final prefs = await _prefs();
+    final key = _notesKeyForDate(day);
+    final nowIso = DateTime.now().toIso8601String();
+    final newNote = {'id': _noteId(), 'text': text, 'createdAt': nowIso};
+    final raw = prefs.getString(key);
+    List<dynamic> arr = [];
+    if (raw != null) {
+      try {
+        arr = jsonDecode(raw) as List<dynamic>;
+      } catch (_) { arr = []; }
+    }
+    arr.add(newNote);
+    await prefs.setString(key, jsonEncode(arr));
+
+    // award points only once per date: check flag (keep original award logic)
+    final awardedKey = 'points_awarded_${_dateKey(day)}';
+    final alreadyAwarded = prefs.getBool(awardedKey) ?? false;
     final createdAt = DateTime.now();
     final sameDay = createdAt.year == day.year && createdAt.month == day.month && createdAt.day == day.day;
-
     if (!alreadyAwarded && sameDay) {
-      userPoints += 1; // simple +1; can be extended to multiplier logic
+      userPoints += 1;
       await prefs.setInt('user_points', userPoints);
       await prefs.setBool(awardedKey, true);
     }
 
+    // update in-memory map: store items + legacy fields
+    final dateKey = _dateKey(day);
+    final items = arr.map((e) => e as Map<String, dynamic>).toList();
     setState(() {
-      notesByDate[key] = {'text': text, 'createdAt': nowIso};
+      notesByDate[dateKey] = {
+        'items': items,
+        'text': items.isNotEmpty ? (items.last['text'] ?? '') : '',
+        'createdAt': items.isNotEmpty ? (items.last['createdAt'] ?? '') : '',
+      };
     });
   }
 
-  Future<void> _deleteNoteForDay(DateTime day) async {
+// Update an existing note by id
+  Future<void> _updateNoteForDay(DateTime day, String noteId, String newText) async {
     final prefs = await _prefs();
-    final key = _dateKey(day);
-    await prefs.remove('note_$key');
-    // Note: don't remove awarded flag -> prevents re-awarding on re-create the same day
-    setState(() => notesByDate.remove(key));
+    final key = _notesKeyForDate(day);
+    final raw = prefs.getString(key);
+    if (raw == null) return;
+    List<dynamic> arr;
+    try {
+      arr = jsonDecode(raw) as List<dynamic>;
+    } catch (_) { return; }
+    bool changed = false;
+    for (var i = 0; i < arr.length; i++) {
+      final n = arr[i] as Map<String, dynamic>;
+      if (n['id'] == noteId) {
+        n['text'] = newText;
+        n['createdAt'] = DateTime.now().toIso8601String();
+        arr[i] = n;
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+    await prefs.setString(key, jsonEncode(arr));
+    final dateKey = _dateKey(day);
+    final items = arr.map((e) => e as Map<String, dynamic>).toList();
+    setState(() {
+      notesByDate[dateKey] = {
+        'items': items,
+        'text': items.isNotEmpty ? (items.last['text'] ?? '') : '',
+        'createdAt': items.isNotEmpty ? (items.last['createdAt'] ?? '') : '',
+      };
+    });
+  }
+
+// Delete a note by id for a day (if noteId == null, delete all notes for that day)
+  Future<void> _deleteNoteById(DateTime day, {String? noteId}) async {
+    final prefs = await _prefs();
+    final key = _notesKeyForDate(day);
+    final raw = prefs.getString(key);
+    if (raw == null) {
+      // nothing to delete
+      return;
+    }
+    List<dynamic> arr;
+    try {
+      arr = jsonDecode(raw) as List<dynamic>;
+    } catch (_) { arr = []; }
+    if (noteId == null) {
+      // delete all
+      await prefs.remove(key);
+      setState(() => notesByDate.remove(_dateKey(day)));
+      return;
+    }
+    final newArr = arr.where((e) => (e as Map<String, dynamic>)['id'] != noteId).toList();
+    if (newArr.isEmpty) {
+      await prefs.remove(key);
+      setState(() => notesByDate.remove(_dateKey(day)));
+      return;
+    }
+    await prefs.setString(key, jsonEncode(newArr));
+    final dateKey = _dateKey(day);
+    setState(() {
+      notesByDate[dateKey] = {
+        'items': newArr.map((e) => e as Map<String, dynamic>).toList(),
+        'text': newArr.isNotEmpty ? (newArr.last['text'] ?? '') : '',
+        'createdAt': newArr.isNotEmpty ? (newArr.last['createdAt'] ?? '') : '',
+      };
+    });
   }
 
   // ------------------- Calendar helpers -------------------
@@ -151,14 +240,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Build grid (Monday first) — keep original logic but we will display only first 35 items (5 rows)
   List<DateTime> _buildGridDates(DateTime month) {
     final first = _firstDayOfMonth(month);
-    final int startOffset = first.weekday - 1; // 0 if Mon, 6 if Sun
-    final total = 42; // we still compute 6x7 grid, but will show 35 cells to have 5 rows
-    final List<DateTime> dates = List.generate(total, (i) {
-      final dayIndex = i - startOffset;
-      return DateTime(month.year, month.month, 1).add(Duration(days: dayIndex));
-    });
-    return dates;
+    final int startOffset = (first.weekday - 1); // Monday=0
+
+    // первая дата сетки (понедельник первой недели)
+    final DateTime gridStart = DateTime(month.year, month.month, 1).subtract(Duration(days: startOffset));
+
+    // сгенерируем 6 недель (макс)
+    final all = List<DateTime>.generate(42, (i) => gridStart.add(Duration(days: i)));
+
+    // разобьём по неделям
+    final weeks = <List<DateTime>>[];
+    for (int i = 0; i < 42; i += 7) {
+      weeks.add(all.sublist(i, i + 7));
+    }
+
+    // удаляем недели, где нет ни одного дня текущего месяца
+    weeks.removeWhere((week) => week.every((d) => d.month != month.month));
+
+    // возвращаем сплющенный список (4/5/6 строки)
+    return weeks.expand((w) => w).toList();
   }
+
 
   // function to change visibleMonth with direction (for animation)
   void _changeMonth({required int delta}) {
@@ -167,154 +269,173 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       visibleMonth = DateTime(visibleMonth.year, visibleMonth.month + delta);
     });
   }
-
-  // ------------------- UI: Day sheet -------------------
+// ------------------- UI: Day sheet (REPLACEMENT, supports multiple notes) -------------------
   void _openDaySheet(DateTime day) {
-    final key = _dateKey(day);
-    final existing = notesByDate[key];
-    final textController = TextEditingController(text: existing != null ? existing['text'] as String : '');
-    bool hasUnsavedChanges = false;
+    final dateKey = _dateKey(day);
+    final existing = notesByDate[dateKey];
+    final List<Map<String, dynamic>> items = List<Map<String,dynamic>>.from(existing != null && existing['items'] != null ? existing['items'] as List : []);
+    // controller used for new note / editing
+    final newController = TextEditingController();
+    String? editingId;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return WillPopScope(
-          onWillPop: () async {
-            if (hasUnsavedChanges && textController.text.trim().isNotEmpty && (existing == null || existing['text'] != textController.text.trim())) {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (dctx) => AlertDialog(
-                  title: const Text('Вы не сохранили заметку'),
-                  content: const Text('При выходе изменения не будут сохранены. Вы хотите выйти?'),
-                  actionsAlignment: MainAxisAlignment.start,
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
-                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
-                  ],
-                ),
-              );
-              return confirm == true;
-            }
-            return true;
-          },
-          child: GestureDetector(
-            onTap: () {}, // prevent closing by tapping sheet itself
-            child: DraggableScrollableSheet(
-              initialChildSize: 0.65,
-              minChildSize: 0.3,
-              maxChildSize: 0.95,
-              builder: (context, scrollController) => Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDarkTheme ? Colors.grey[900] : Colors.white,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text('Записи на ${day.day}.${day.month}.${day.year}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDarkTheme ? Colors.white : Colors.black87))),
-                          IconButton(icon: Icon(Icons.close, color: purple), onPressed: () async {
-                            // ask if unsaved changes
-                            if (hasUnsavedChanges && textController.text.trim().isNotEmpty && (existing == null || existing['text'] != textController.text.trim())) {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (dctx) => AlertDialog(
-                                  title: const Text('Вы не сохранили заметку'),
-                                  content: const Text('При выходе изменения не будут сохранены. Вы хотите выйти?'),
-                                  actionsAlignment: MainAxisAlignment.start,
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
-                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
-                                  ],
+        return StatefulBuilder(builder: (context, setModalState) {
+          void refreshFromMemory() {
+            final mem = notesByDate[dateKey];
+            setModalState(() {
+              items.clear();
+              if (mem != null && mem['items'] != null) {
+                final list = mem['items'] as List;
+                items.addAll(list.map((e) => Map<String,dynamic>.from(e as Map)));
+              }
+            });
+          }
+
+          return WillPopScope(
+            onWillPop: () async {
+              // no special unsaved check for list mode
+              return true;
+            },
+            child: GestureDetector(
+              onTap: () {}, // prevent closing by tapping sheet itself
+              child: DraggableScrollableSheet(
+                initialChildSize: 0.65,
+                minChildSize: 0.3,
+                maxChildSize: 0.95,
+                builder: (context, scrollController) => Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDarkTheme ? Colors.grey[900] : Colors.white,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: Text('Записи на ${day.day}.${day.month}.${day.year}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDarkTheme ? Colors.white : Colors.black87))),
+                            IconButton(icon: Icon(Icons.close, color: purple), onPressed: () => Navigator.pop(ctx)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+
+                        // input area: either new note or editing existing
+                        TextField(
+                          controller: newController,
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: editingId == null ? 'Напишите новую заметку...' : 'Редактирование заметки...',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            filled: true,
+                            fillColor: isDarkTheme ? Colors.grey[800] : Colors.grey[100],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.save),
+                              label: Text(editingId == null ? 'Добавить' : 'Сохранить'),
+                              style: ElevatedButton.styleFrom(backgroundColor: purple),
+                              onPressed: () async {
+                                final txt = newController.text.trim();
+                                if (txt.isEmpty) return;
+                                if (editingId == null) {
+                                  await _addNoteForDay(day, txt);
+                                } else {
+                                  await _updateNoteForDay(day, editingId!, txt);
+                                  editingId = null;
+                                }
+                                // сразу обновляем локальный список и UI модального окна:
+                                newController.clear();
+                                // refreshFromMemory использует setModalState() — вызываем её для немедленного обновления
+                                refreshFromMemory();
+                                // небольшая анимация фокуса/пульсации (необязательно), но можно сделать setModalState пустым вызовом:
+                                // setModalState((){});
+                              },
+
+                            ),
+                            const SizedBox(width: 12),
+                            if (editingId != null)
+                              OutlinedButton(
+                                onPressed: () {
+                                  editingId = null;
+                                  newController.clear();
+                                  setModalState((){});
+                                },
+                                child: const Text('Отмена'),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // list of notes
+                        if (items.isEmpty) ...[
+                          Text('Заметок пока нет.', style: TextStyle(color: isDarkTheme ? Colors.white70 : Colors.black54)),
+                        ] else
+                          Column(
+                            children: items.reversed.map((note) {
+                              final id = note['id']?.toString() ?? '';
+                              final text = note['text']?.toString() ?? '';
+                              final createdAt = note['createdAt']?.toString() ?? '';
+                              return Card(
+                                color: isDarkTheme ? Colors.grey[850] : Colors.white,
+                                child: ListTile(
+                                  title: Text(text, style: TextStyle(color: isDarkTheme ? Colors.white : Colors.black87)),
+                                  subtitle: Text(createdAt, style: TextStyle(fontSize: 11, color: isDarkTheme ? Colors.white60 : Colors.black54)),
+                                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    IconButton(
+                                      icon: Icon(Icons.edit, color: purple),
+                                      onPressed: () {
+                                        editingId = id;
+                                        newController.text = text;
+                                        setModalState((){});
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.delete, color: Colors.redAccent),
+                                      onPressed: () async {
+                                        final confirmed = await showDialog<bool>(
+                                          context: context,
+                                          builder: (dctx) => AlertDialog(
+                                            title: const Text('Удалить заметку?'),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
+                                              TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirmed == true) {
+                                          await _deleteNoteById(day, noteId: id);
+                                          refreshFromMemory();
+                                        }
+                                      },
+                                    ),
+                                  ]),
+                                  onTap: () {
+                                    // quick edit on tap
+                                    editingId = id;
+                                    newController.text = text;
+                                    setModalState((){});
+                                  },
                                 ),
                               );
-                              if (confirm == true) Navigator.pop(context);
-                            } else {
-                              Navigator.pop(context);
-                            }
-                          }),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: textController,
-                        maxLines: 8,
-                        onChanged: (_) => hasUnsavedChanges = true,
-                        decoration: InputDecoration(
-                          hintText: 'Напишите что-то хорошее, что произошло...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          filled: true,
-                          fillColor: isDarkTheme ? Colors.grey[800] : Colors.grey[100],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.save),
-                            label: const Text('Сохранить', style: TextStyle(color: Colors.white)),
-                            style: ElevatedButton.styleFrom(backgroundColor: purple),
-                            onPressed: () async {
-                              final text = textController.text.trim();
-                              if (text.isEmpty) {
-                                // nothing to save
-                                Navigator.pop(context);
-                                return;
-                              }
-                              await _saveNoteForDay(day, text);
-                              Navigator.pop(context);
-                            },
+                            }).toList(),
                           ),
-                          const SizedBox(width: 12),
-                          if (existing != null)
-                            OutlinedButton(
-                              onPressed: () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (dctx) => AlertDialog(
-                                    title: const Text('Удалить заметку?'),
-                                    content: const Text('Вы действительно хотите удалить заметку?'),
-                                    actionsAlignment: MainAxisAlignment.start,
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
-                                      TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
-                                    ],
-                                  ),
-                                );
-                                if (confirmed == true) {
-                                  await _deleteNoteForDay(day);
-                                  Navigator.pop(context);
-                                }
-                              },
-                              child: const Text('Удалить'),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Builder(builder: (c) {
-                        final note = notesByDate[_dateKey(day)];
-                        if (note == null) return const SizedBox.shrink();
-                        final createdAt = DateTime.tryParse(note['createdAt'] as String? ?? '');
-                        if (createdAt == null) return const SizedBox.shrink();
-                        final sameDay = createdAt.year == day.year && createdAt.month == day.month && createdAt.day == day.day;
-                        return Text(
-                          sameDay ? 'Эта запись учтена для сегодняшних очков.' : 'Эта запись НЕ была создана в этот день — очки не начисляются.',
-                          style: TextStyle(color: isDarkTheme ? Colors.white70 : Colors.black87),
-                        );
-                      }),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
+          );
+        });
       },
     ).whenComplete(() => setState(() {}));
   }
@@ -447,22 +568,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 Expanded(
                                   child: Center(
                                     child: AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 360),
+                                      duration: const Duration(milliseconds: 1500),
+                                      switchInCurve: Curves.easeOutCubic,
+                                      switchOutCurve: Curves.easeInCubic,
+                                      layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) => currentChild ?? const SizedBox.shrink(),
                                       transitionBuilder: (Widget child, Animation<double> anim) {
-                                        final offsetAnim = anim.drive(Tween<Offset>(
-                                          begin: Offset(0.3 * (_calendarSlideDirection.toDouble()), 0.0),
+                                        final offset = Tween<Offset>(
+                                          begin: Offset(0.22 * _calendarSlideDirection, 0),
                                           end: Offset.zero,
-                                        ));
-                                        return SlideTransition(position: offsetAnim, child: FadeTransition(opacity: anim, child: child));
+                                        ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                                        return ClipRect(child: SlideTransition(position: offset, child: FadeTransition(opacity: anim, child: child)));
                                       },
                                       child: Text(
                                         '${_monthName(visibleMonth.month)} ${visibleMonth.year}',
-                                        key: ValueKey<int>(visibleMonth.month + visibleMonth.year * 100),
-                                        style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                                        key: ValueKey('${visibleMonth.month}_${visibleMonth.year}'),
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: textColor),
                                       ),
                                     ),
+
                                   ),
                                 ),
+
                                 IconButton(
                                   icon: const Icon(Icons.chevron_right),
                                   onPressed: () {
@@ -500,16 +626,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 }
                               },
                               child: SizedBox(
-                                height: calendarHeight, // <-- высота календаря (5 строк)
+                                height: calendarHeight,
                                 child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 360),
-                                  transitionBuilder: (child, anim) {
-                                    final offsetBegin = Offset(0.3 * _calendarSlideDirection, 0);
-                                    final offsetAnim = anim.drive(Tween<Offset>(begin: offsetBegin, end: Offset.zero).chain(CurveTween(curve: Curves.easeOut)));
-                                    return SlideTransition(position: offsetAnim, child: FadeTransition(opacity: anim, child: child));
+                                  duration: const Duration(milliseconds: 1500),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+                                    // Чтобы не было видимого наложения старого и нового — показываем только текущий
+                                    return currentChild ?? const SizedBox.shrink();
+                                  },
+                                  transitionBuilder: (Widget child, Animation<double> anim) {
+                                    // лёгкое слайд+fade — без "следов"
+                                    final offset = Tween<Offset>(
+                                      begin: Offset(0.18 * _calendarSlideDirection, 0),
+                                      end: Offset.zero,
+                                    ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+
+                                    return ClipRect(           // обрезаем, чтобы не было артефактов при сдвиге
+                                      child: SlideTransition(
+                                        position: offset,
+                                        child: FadeTransition(opacity: anim, child: child),
+                                      ),
+                                    );
                                   },
                                   child: _buildCalendarGrid(
-                                    key: ValueKey<String>('grid_${visibleMonth.year}_${visibleMonth.month}'),
+                                    key: ValueKey<String>('grid_${visibleMonth.year}_${visibleMonth.month}_${gridDates.length}'),
                                     gridDates: gridDates,
                                     calendarHeight: calendarHeight,
                                     textColor: textColor,
@@ -693,7 +834,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // helper that builds the calendar grid (separated to keep build tidy)
+// ----------------- Calendar grid builder (REPLACEMENT) -----------------
   Widget _buildCalendarGrid({
     required Key key,
     required List<DateTime> gridDates,
@@ -701,61 +842,72 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required Color textColor,
     required DateTime now,
   }) {
-    // we will show only first 35 cells (5 rows x 7 cols)
-    final showCount = 35;
+    final int totalCells = gridDates.length;            // 28..42 (на деле 28 редко)
+    final int rows = (totalCells / 7).ceil();          // 4/5/6
+    final bool sixRows = rows >= 6;
+    final double cellHeight = calendarHeight / rows;
+    final double fontSize = sixRows ? 12.0 : 14.0;     // уменьшаем, если 6 строк
+    final double margin = sixRows ? 3.0 : 4.0;
+
+
     return Container(
       key: key,
-      child: GridView.builder(
-        padding: EdgeInsets.zero,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, childAspectRatio: 1.0),
-        itemCount: showCount,
-        itemBuilder: (context, idx) {
-          if (idx >= gridDates.length) return const SizedBox.shrink();
-          final d = gridDates[idx];
-          final dKey = _dateKey(d);
-          final note = notesByDate[dKey];
-          final isOtherMonth = d.month != visibleMonth.month;
-          final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+      child: SizedBox(
+        height: calendarHeight,
+        child: GridView.builder(
+          padding: EdgeInsets.zero,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            childAspectRatio: (MediaQuery.of(context).size.width / 7) / cellHeight,
+          ),
+          itemCount: totalCells,
+          itemBuilder: (context, idx) {
+            final d = gridDates[idx];
+            final dKey = _dateKey(d);
+            final note = notesByDate[dKey];
+            final isOtherMonth = d.month != visibleMonth.month;
+            final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
 
-          Color bg = Colors.transparent;
-          if (note != null) {
-            final created = DateTime.tryParse(note['createdAt'] as String? ?? '');
-            if (created != null && created.year == d.year && created.month == d.month && created.day == d.day) {
-              bg = purple.withOpacity(0.45);
-            } else {
-              bg = purple.withOpacity(0.22);
-            }
-          }
-
-          return GestureDetector(
-            onTap: () {
-              if (isOtherMonth) {
-                // jump to that month and then open day sheet
-                setState(() => visibleMonth = DateTime(d.year, d.month));
-                Future.delayed(const Duration(milliseconds: 150), () => _openDaySheet(d));
+            Color bg = Colors.transparent;
+            if (note != null) {
+              final created = DateTime.tryParse((note is Map && note['createdAt'] != null) ? note['createdAt'] as String : (note is Map && note['items'] != null ? (note['items'] as List).isNotEmpty ? (note['items'] as List).last['createdAt'] as String? : null : null) ?? '');
+              if (created != null && created.year == d.year && created.month == d.month && created.day == d.day) {
+                bg = purple.withOpacity(0.45);
               } else {
-                _openDaySheet(d);
+                bg = purple.withOpacity(0.22);
               }
-            },
-            child: Container(
-              margin: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(8),
+            }
+
+            return GestureDetector(
+              onTap: () {
+                if (isOtherMonth) {
+                  setState(() => visibleMonth = DateTime(d.year, d.month));
+                  Future.delayed(const Duration(milliseconds: 150), () => _openDaySheet(d));
+                } else {
+                  _openDaySheet(d);
+                }
+              },
+              child: Container(
+                margin: EdgeInsets.all(margin),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Stack(
+                  children: [
+                    Center(child: Text('${d.day}', style: TextStyle(fontSize: fontSize, color: isOtherMonth ? Colors.grey : textColor))),
+                    if (isToday) Positioned(top: 4, right: 4, child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: purple))),
+                  ],
+                ),
               ),
-              child: Stack(
-                children: [
-                  Center(child: Text('${d.day}', style: TextStyle(color: isOtherMonth ? Colors.grey : textColor))),
-                  if (isToday) Positioned(top: 4, right: 4, child: Container(width: 6, height: 6, decoration: BoxDecoration(shape: BoxShape.circle, color: purple))),
-                ],
-              ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
+
 
   String _monthName(int m) {
     const names = ['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -803,69 +955,255 @@ class _BreathPathPainter extends CustomPainter {
 /// Full breathing UI: moving dot along path and phase label
 class _BreathingFull extends StatefulWidget {
   final _HomeScreenState controller;
-  final AnimationController animation;
+  final AnimationController animation; // оставляем сигнатуру для совместимости
   const _BreathingFull({required this.controller, required this.animation, super.key});
 
   @override
   State<_BreathingFull> createState() => _BreathingFullState();
 }
 
-class _BreathingFullState extends State<_BreathingFull> with SingleTickerProviderStateMixin {
+class _BreathingFullState extends State<_BreathingFull> with TickerProviderStateMixin {
+  late AnimationController _ctrl; // управляет позицией шарика и таймером
+  bool running = false;
+
+  static const int totalSeconds = 57; // 3 cycles: 4+7+8 = 19 *3 =57
+  // phases per cycle: [4 inhale, 7 hold, 8 exhale]
+  final List<int> phaseDurations = [4, 7, 8];
+
   @override
   void initState() {
     super.initState();
-    // animation already controlled by parent (breathController)
-    widget.animation.repeat();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: totalSeconds));
   }
 
   @override
   void dispose() {
-    widget.animation.stop();
+    _ctrl.dispose();
     super.dispose();
+  }
+
+  void _start() {
+    if (running) return;
+    setState(() => running = true);
+    _ctrl.forward(from: 0.0).whenComplete(() {
+      setState(() => running = false);
+    });
+  }
+
+  void _stop() {
+    if (!running) return;
+    _ctrl.stop();
+    setState(() => running = false);
+  }
+
+  // helper: compute progress on full 0..1 (0 start, 1 end)
+  double get progress => _ctrl.value;
+
+  // compute current local time in seconds (0..totalSeconds)
+  double get secs => _ctrl.value * totalSeconds;
+
+  // returns which phase index (0..2) within a cycle and which cycle
+  Map<String,int> phaseInfo(double tSeconds) {
+    final cycleLen = phaseDurations.reduce((a,b) => a+b);
+    final cycleIndex = (tSeconds ~/ cycleLen);
+    final inCycle = (tSeconds % cycleLen).toInt();
+    int acc = 0;
+    for (int i=0;i<phaseDurations.length;i++) {
+      acc += phaseDurations[i];
+      if (inCycle < acc) {
+        return {'phase': i, 'cycle': cycleIndex};
+      }
+    }
+    return {'phase': 1, 'cycle': cycleIndex};
+  }
+
+  // Compute world position of ball along polyline
+  Offset _posAlongPath(Size size, double t) {
+    // define points relative to size:
+    final p0 = Offset(size.width * 0.08, size.height * 0.88);
+    final p1 = Offset(size.width * 0.35, size.height * 0.28); // up-left -> up
+    final p2 = Offset(size.width * 0.65, size.height * 0.28); // straight right
+    final p3 = Offset(size.width * 0.92, size.height * 0.88); // down-right
+
+    // lengths
+    final l1 = (p1 - p0).distance;
+    final l2 = (p2 - p1).distance;
+    final l3 = (p3 - p2).distance;
+    final total = l1 + l2 + l3;
+    final dist = t * total;
+
+    if (dist <= l1) {
+      final local = dist / l1;
+      return Offset.lerp(p0, p1, local)!;
+    } else if (dist <= l1 + l2) {
+      final local = (dist - l1) / l2;
+      return Offset.lerp(p1, p2, local)!;
+    } else {
+      final local = (dist - l1 - l2) / l3;
+      return Offset.lerp(p2, p3, local)!;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size.width * 0.9;
+    final sizeW = MediaQuery.of(context).size.width * 0.9;
+    final sizeH = sizeW * 0.6;
     return SizedBox(
-      width: size,
-      height: size * 0.6,
+      width: sizeW,
+      height: sizeH,
       child: Stack(
         children: [
-          Center(child: CustomPaint(size: Size(size, size*0.5), painter: _BreathPathPainter(color: widget.controller.purple))),
+          // background path
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _BreathPathPainter(color: widget.controller.purple),
+            ),
+          ),
+
+          // Moving ball + phase texts + circular timer:
           AnimatedBuilder(
-            animation: widget.animation,
+            animation: _ctrl,
             builder: (context, _) {
-              final t = widget.animation.value; // 0..1
-              final w = size; final h = size*0.5;
-              Offset p;
-              if (t < 0.33) {
-                final local = t/0.33;
-                p = Offset(w*0.0 + (w*0.5 - 0.0)*local, h*0.7 - (h*0.5)*local);
-              } else if (t < 0.66) {
-                final local = (t-0.33)/0.33;
-                p = Offset(w*0.5 + (w*0.9 - w*0.5)*local, h*0.2 + (h*0.5)*local);
-              } else {
-                final local = (t-0.66)/0.34;
-                p = Offset(w*0.9 + (w - w*0.9)*local, h*0.7 - (h*0.1)*local);
+              final localT = progress.clamp(0.0, 1.0);
+              final pos = _posAlongPath(Size(sizeW, sizeH), localT);
+              final double secondsNow = secs;
+              final info = phaseInfo(secondsNow);
+              final phase = info['phase'] ?? 1; // 0 inhale,1 hold,2 exhale
+
+              // show text only during inhale(0) or exhale(2)
+              String? phaseText;
+              if (phase == 0) phaseText = 'Вдох';
+              else if (phase == 2) phaseText = 'Выдох';
+              else phaseText = null;
+
+              // compute text fade/scale (smooth)
+              double textOpacity = 0.0;
+              double textScale = 1.0;
+              if (phaseText != null) {
+                // within current phase progress
+                final cycleLen = phaseDurations.reduce((a,b)=>a+b);
+                final inCycle = (secondsNow % cycleLen);
+                // compute startSecond of this phase in cycle:
+                int start = 0;
+                for (int i=0;i<phase;i++) start += phaseDurations[i];
+                final phaseElapsed = inCycle - start;
+                final phaseLen = phaseDurations[phase];
+                final p = (phaseElapsed / phaseLen).clamp(0.0, 1.0);
+                // fade in first 15% and fade out last 15%
+                if (p < 0.15) textOpacity = p / 0.15;
+                else if (p > 0.85) textOpacity = (1 - p) / 0.15;
+                else textOpacity = 1.0;
+                textScale = 1.0 + 0.06 * (0.5 - (p - 0.5).abs()) * 2.0;
               }
-              return Positioned(left: p.dx-10, top: p.dy-10, child: Container(width:20, height:20, decoration: BoxDecoration(color: widget.controller.purple, shape: BoxShape.circle)));
+
+              return Stack(
+                children: [
+                  // ball position
+                  Positioned(
+                    left: pos.dx - 12,
+                    top: pos.dy - 12,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: widget.controller.purple,
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0,3))],
+                      ),
+                    ),
+                  ),
+
+                  // phase text in center
+                  if (phaseText != null)
+                    Positioned.fill(
+                      child: Center(
+                        child: Opacity(
+                          opacity: textOpacity,
+                          child: Transform.scale(
+                            scale: textScale,
+                            child: Text(
+                              phaseText,
+                              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: widget.controller.purple.withOpacity(0.95)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
             },
           ),
-          Positioned(top: 8, right: 16, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal:8, vertical:4),
-            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-            child: const Text('00:45', style: TextStyle(color: Colors.white, fontSize: 12)),
-          )),
-          Positioned(bottom: 16, left: 0, right: 0, child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              decoration: BoxDecoration(color: widget.controller.purple, borderRadius: BorderRadius.circular(12)),
-              child: Text('Стоп', style: const TextStyle(color: Colors.white, fontSize: 16)),
+
+          // circular timer top-right
+          Positioned(
+            top: 8,
+            right: 12,
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: AnimatedBuilder(
+                animation: _ctrl,
+                builder: (context, _) {
+                  final p = _ctrl.value.clamp(0.0, 1.0);
+                  return CustomPaint(
+                    painter: _BreathTimerPainter(color: widget.controller.purple, progress: p),
+                    child: const SizedBox.expand(),
+                  );
+                },
+              ),
             ),
-          )),
+          ),
+
+          // start/stop button bottom center
+          Positioned(
+            bottom: 12,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: ElevatedButton(
+                onPressed: () {
+                  if (!running) _start(); else _stop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.controller.purple,
+                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(running ? 'Стоп' : 'Старт', style: const TextStyle(color: Colors.white, fontSize: 16)),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+// Painter for circular timer
+class _BreathTimerPainter extends CustomPainter {
+  final Color color;
+  final double progress; // 0..1
+  _BreathTimerPainter({required this.color, required this.progress});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = size.width / 2;
+    final center = Offset(r, r);
+    final bgPaint = Paint()..color = color..style = PaintingStyle.fill;
+    canvas.drawCircle(center, r, bgPaint);
+
+    // white arc that grows counter-clockwise
+    final arcPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+
+    final rect = Rect.fromCircle(center: center, radius: r - 4);
+    // start at -90deg, sweep negative to draw CCW
+    final sweep = -progress * 2 * 3.141592653589793;
+    canvas.drawArc(rect, -3.141592653589793/2, sweep, false, arcPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BreathTimerPainter old) => old.progress != progress || old.color != color;
 }
