@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'breathing_screen.dart';
 import 'catalog_screen.dart';
 import 'chat_screen.dart';
 import 'plan_screen.dart';
@@ -35,9 +35,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Map<String, Map<String, dynamic>> notesByDate = {}; // key: 'YYYY-MM-DD' -> {'text', 'createdAt'}
   late DateTime visibleMonth; // used to show month in calendar
 
-  // breathing animation
-  late AnimationController breathController;
-
   // bottom nav (kept for completeness)
   int _selectedIndex = 0;
 
@@ -49,8 +46,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     visibleMonth = DateTime.now();
-    breathController = AnimationController(vsync: this, duration: const Duration(seconds: 6));
-    breathController.repeat(reverse: true);
     _loadAll();
     // system UI transparent nav bars
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -61,11 +56,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ));
   }
 
-  @override
-  void dispose() {
-    breathController.dispose();
-    super.dispose();
-  }
 
   // ------------------- Storage helpers -------------------
   String _dateKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -440,38 +430,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ).whenComplete(() => setState(() {}));
   }
 
-  // ------------------- Breathing overlay -------------------
-  void _openBreathOverlay() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return WillPopScope(
-          onWillPop: () async {
-            return true;
-          },
-          child: Scaffold(
-            backgroundColor: Colors.black54,
-            body: SafeArea(
-              child: Stack(
-                children: [
-                  Center(child: _BreathingFull(controller: this, animation: breathController)),
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   // ------------------- UI build -------------------
   @override
@@ -568,7 +526,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 Expanded(
                                   child: Center(
                                     child: AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 1500),
+                                      duration: const Duration(milliseconds: 1100),
                                       switchInCurve: Curves.easeOutCubic,
                                       switchOutCurve: Curves.easeInCubic,
                                       layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) => currentChild ?? const SizedBox.shrink(),
@@ -628,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               child: SizedBox(
                                 height: calendarHeight,
                                 child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 1500),
+                                  duration: const Duration(milliseconds: 1100),
                                   switchInCurve: Curves.easeOutCubic,
                                   switchOutCurve: Curves.easeInCubic,
                                   layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
@@ -666,11 +624,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
                     const SizedBox(height: 12),
 
-                    // breathing card (untouched)
+                    // breathing card (updated)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: GestureDetector(
-                        onTap: _openBreathOverlay,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const BreathingScreen()),
+                          );
+                        },
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
@@ -681,17 +644,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                           child: Row(
                             children: [
-                              CustomPaint(size: const Size(80,40), painter: _ProtoBreathPainter(color: purple)),
+                              SizedBox(
+                                width: 65,
+                                height: 65,
+                                child: Image.asset(
+                                  'assets/images/meditation.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+
                               const SizedBox(width: 12),
-                              Expanded(child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Быстрая дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, color: textColor)),
-                                  const SizedBox(height: 6),
-                                  Text('Короткая практика для снижения стресса', style: TextStyle(color: textColor, fontSize: 12)),
-                                ],
-                              )),
-                              Icon(Icons.play_circle_fill, color: purple, size: 36)
+
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Быстрая дыхательная практика',
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Короткая практика для снижения стресса',
+                                      style: TextStyle(color: textColor, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              Icon(Icons.play_circle_fill, color: purple, size: 36),
                             ],
                           ),
                         ),
@@ -913,297 +894,4 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     const names = ['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
     return names[m];
   }
-}
-
-// ----------------- Breathing custom painters & widget -----------------
-
-class _ProtoBreathPainter extends CustomPainter {
-  final Color color;
-  _ProtoBreathPainter({required this.color});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..strokeWidth = 3..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-    final path = Path();
-    path.moveTo(0, size.height*0.7);
-    path.quadraticBezierTo(size.width*0.25, size.height*0.2, size.width*0.5, size.height*0.7);
-    path.quadraticBezierTo(size.width*0.75, size.height*1.1, size.width, size.height*0.6);
-    canvas.drawPath(path, paint);
-    final dotPaint = Paint()..color=color;
-    canvas.drawCircle(Offset(size.width*0.1, size.height*0.65), 4, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _BreathPathPainter extends CustomPainter {
-  final Color color;
-  _BreathPathPainter({required this.color});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color=color.withOpacity(0.9)..strokeWidth=4..style=PaintingStyle.stroke..strokeCap=StrokeCap.round;
-    final path = Path();
-    path.moveTo(0, size.height*0.7);
-    path.quadraticBezierTo(size.width*0.25, size.height*0.2, size.width*0.5, size.height*0.7);
-    path.quadraticBezierTo(size.width*0.75, size.height*1.05, size.width, size.height*0.6);
-    canvas.drawPath(path, paint);
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Full breathing UI: moving dot along path and phase label
-class _BreathingFull extends StatefulWidget {
-  final _HomeScreenState controller;
-  final AnimationController animation; // оставляем сигнатуру для совместимости
-  const _BreathingFull({required this.controller, required this.animation, super.key});
-
-  @override
-  State<_BreathingFull> createState() => _BreathingFullState();
-}
-
-class _BreathingFullState extends State<_BreathingFull> with TickerProviderStateMixin {
-  late AnimationController _ctrl; // управляет позицией шарика и таймером
-  bool running = false;
-
-  static const int totalSeconds = 57; // 3 cycles: 4+7+8 = 19 *3 =57
-  // phases per cycle: [4 inhale, 7 hold, 8 exhale]
-  final List<int> phaseDurations = [4, 7, 8];
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: totalSeconds));
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _start() {
-    if (running) return;
-    setState(() => running = true);
-    _ctrl.forward(from: 0.0).whenComplete(() {
-      setState(() => running = false);
-    });
-  }
-
-  void _stop() {
-    if (!running) return;
-    _ctrl.stop();
-    setState(() => running = false);
-  }
-
-  // helper: compute progress on full 0..1 (0 start, 1 end)
-  double get progress => _ctrl.value;
-
-  // compute current local time in seconds (0..totalSeconds)
-  double get secs => _ctrl.value * totalSeconds;
-
-  // returns which phase index (0..2) within a cycle and which cycle
-  Map<String,int> phaseInfo(double tSeconds) {
-    final cycleLen = phaseDurations.reduce((a,b) => a+b);
-    final cycleIndex = (tSeconds ~/ cycleLen);
-    final inCycle = (tSeconds % cycleLen).toInt();
-    int acc = 0;
-    for (int i=0;i<phaseDurations.length;i++) {
-      acc += phaseDurations[i];
-      if (inCycle < acc) {
-        return {'phase': i, 'cycle': cycleIndex};
-      }
-    }
-    return {'phase': 1, 'cycle': cycleIndex};
-  }
-
-  // Compute world position of ball along polyline
-  Offset _posAlongPath(Size size, double t) {
-    // define points relative to size:
-    final p0 = Offset(size.width * 0.08, size.height * 0.88);
-    final p1 = Offset(size.width * 0.35, size.height * 0.28); // up-left -> up
-    final p2 = Offset(size.width * 0.65, size.height * 0.28); // straight right
-    final p3 = Offset(size.width * 0.92, size.height * 0.88); // down-right
-
-    // lengths
-    final l1 = (p1 - p0).distance;
-    final l2 = (p2 - p1).distance;
-    final l3 = (p3 - p2).distance;
-    final total = l1 + l2 + l3;
-    final dist = t * total;
-
-    if (dist <= l1) {
-      final local = dist / l1;
-      return Offset.lerp(p0, p1, local)!;
-    } else if (dist <= l1 + l2) {
-      final local = (dist - l1) / l2;
-      return Offset.lerp(p1, p2, local)!;
-    } else {
-      final local = (dist - l1 - l2) / l3;
-      return Offset.lerp(p2, p3, local)!;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sizeW = MediaQuery.of(context).size.width * 0.9;
-    final sizeH = sizeW * 0.6;
-    return SizedBox(
-      width: sizeW,
-      height: sizeH,
-      child: Stack(
-        children: [
-          // background path
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _BreathPathPainter(color: widget.controller.purple),
-            ),
-          ),
-
-          // Moving ball + phase texts + circular timer:
-          AnimatedBuilder(
-            animation: _ctrl,
-            builder: (context, _) {
-              final localT = progress.clamp(0.0, 1.0);
-              final pos = _posAlongPath(Size(sizeW, sizeH), localT);
-              final double secondsNow = secs;
-              final info = phaseInfo(secondsNow);
-              final phase = info['phase'] ?? 1; // 0 inhale,1 hold,2 exhale
-
-              // show text only during inhale(0) or exhale(2)
-              String? phaseText;
-              if (phase == 0) phaseText = 'Вдох';
-              else if (phase == 2) phaseText = 'Выдох';
-              else phaseText = null;
-
-              // compute text fade/scale (smooth)
-              double textOpacity = 0.0;
-              double textScale = 1.0;
-              if (phaseText != null) {
-                // within current phase progress
-                final cycleLen = phaseDurations.reduce((a,b)=>a+b);
-                final inCycle = (secondsNow % cycleLen);
-                // compute startSecond of this phase in cycle:
-                int start = 0;
-                for (int i=0;i<phase;i++) start += phaseDurations[i];
-                final phaseElapsed = inCycle - start;
-                final phaseLen = phaseDurations[phase];
-                final p = (phaseElapsed / phaseLen).clamp(0.0, 1.0);
-                // fade in first 15% and fade out last 15%
-                if (p < 0.15) textOpacity = p / 0.15;
-                else if (p > 0.85) textOpacity = (1 - p) / 0.15;
-                else textOpacity = 1.0;
-                textScale = 1.0 + 0.06 * (0.5 - (p - 0.5).abs()) * 2.0;
-              }
-
-              return Stack(
-                children: [
-                  // ball position
-                  Positioned(
-                    left: pos.dx - 12,
-                    top: pos.dy - 12,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: widget.controller.purple,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0,3))],
-                      ),
-                    ),
-                  ),
-
-                  // phase text in center
-                  if (phaseText != null)
-                    Positioned.fill(
-                      child: Center(
-                        child: Opacity(
-                          opacity: textOpacity,
-                          child: Transform.scale(
-                            scale: textScale,
-                            child: Text(
-                              phaseText,
-                              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: widget.controller.purple.withOpacity(0.95)),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-
-          // circular timer top-right
-          Positioned(
-            top: 8,
-            right: 12,
-            child: SizedBox(
-              width: 56,
-              height: 56,
-              child: AnimatedBuilder(
-                animation: _ctrl,
-                builder: (context, _) {
-                  final p = _ctrl.value.clamp(0.0, 1.0);
-                  return CustomPaint(
-                    painter: _BreathTimerPainter(color: widget.controller.purple, progress: p),
-                    child: const SizedBox.expand(),
-                  );
-                },
-              ),
-            ),
-          ),
-
-          // start/stop button bottom center
-          Positioned(
-            bottom: 12,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  if (!running) _start(); else _stop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.controller.purple,
-                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text(running ? 'Стоп' : 'Старт', style: const TextStyle(color: Colors.white, fontSize: 16)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Painter for circular timer
-class _BreathTimerPainter extends CustomPainter {
-  final Color color;
-  final double progress; // 0..1
-  _BreathTimerPainter({required this.color, required this.progress});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final r = size.width / 2;
-    final center = Offset(r, r);
-    final bgPaint = Paint()..color = color..style = PaintingStyle.fill;
-    canvas.drawCircle(center, r, bgPaint);
-
-    // white arc that grows counter-clockwise
-    final arcPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round;
-
-    final rect = Rect.fromCircle(center: center, radius: r - 4);
-    // start at -90deg, sweep negative to draw CCW
-    final sweep = -progress * 2 * 3.141592653589793;
-    canvas.drawArc(rect, -3.141592653589793/2, sweep, false, arcPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BreathTimerPainter old) => old.progress != progress || old.color != color;
 }
