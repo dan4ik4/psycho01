@@ -17,11 +17,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final Color purple = const Color(0xFF5E3B8C);
   final Color cardColor = const Color(0xFFF6F6FF);
 
-  final List<Widget> _screens = [
-     HomeScreen(),
-     ChatScreen(),
-     CatalogScreen(),
-  ];
+  bool isProfileOpen = false; // <-- управление панелью настроек
+
+  final List<Widget> _screensPlaceholder = []; // not used directly
 
   @override
   void initState() {
@@ -46,6 +44,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final double bottomBgHeight = 60; // настройка высоты
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
+    // динамическая ширина панели настроек: 80% от ширины экрана
+    final double panelWidth = MediaQuery.of(context).size.width * 0.8;
+
+    // Список экранов: передаём колбэк открытия панели в HomeScreen
+    final List<Widget> screens = [
+      HomeScreen(onOpenProfile: () => setState(() => isProfileOpen = true)),
+      ChatScreen(),
+      CatalogScreen(),
+    ];
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
@@ -68,10 +76,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             },
             child: KeyedSubtree(
               key: ValueKey<int>(_selectedIndex),
-              child: _screens[_selectedIndex],
+              child: screens[_selectedIndex],
             ),
           ),
-
 
           /// --- Кастомная нижняя панель ---
           Positioned(
@@ -121,13 +128,83 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ),
             ),
           ),
+
+          /// --- PROFILE DRAWER (должен быть выше nav, поэтому добавляем его в конце списка children) ---
+          if (isProfileOpen) ...[
+            // затемняющий фон
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => isProfileOpen = false),
+                child: Container(color: Colors.black.withOpacity(0.4)),
+              ),
+            ),
+
+            // сама панель, слева, ширина = panelWidth
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeInOut,
+                width: panelWidth,
+                child: SafeArea(
+                  child: Container(
+                    color: cardColor,
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // header: можно менять размеры здесь (fontSize)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Профиль', // можно заменить на fullName, если прокинуть
+                                style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, color: purple),
+                              onPressed: () => setState(() => isProfileOpen = false),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 8),
+                        Text('Пол: ---', style: TextStyle(color: Colors.black87)),
+                        Text('Возраст: ---', style: TextStyle(color: Colors.black87)),
+                        Text('Email: ---', style: TextStyle(color: Colors.black87)),
+                        const Spacer(),
+                        OutlinedButton(onPressed: () {}, child: const Text('Настройки')),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            // логика выхода/очистки
+                          },
+                          icon: const Icon(Icons.exit_to_app),
+                          label: const Text('Выйти'),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: purple, foregroundColor: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// 🔘 Кастомная кнопка навигации
+/// Навигационные кнопки (оставляем как есть)
 class _NavButton extends StatelessWidget {
   final IconData icon;
   final bool selected;

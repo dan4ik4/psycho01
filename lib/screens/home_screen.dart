@@ -12,7 +12,8 @@ import 'plan_screen.dart';
 import 'shop_placeholder_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback onOpenProfile;
+  const HomeScreen({required this.onOpenProfile, super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -449,7 +450,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // --------------------------
     // Настраиваемые параметры:
     // --------------------------
-    final double topBarHeight = 72; // <-- регулируй высоту верхней плашки
+    final double topBarHeight = 85; // <-- регулируй высоту верхней плашки
     final double calendarHeight = 230; // <-- регулируй высоту календаря (5 строк)
     // --------------------------
 
@@ -686,7 +687,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          // ---------- FIXED TOP BAR (ONLY ON THIS SCREEN) ----------
+          // ---------- FIXED TOP BAR (CENTERED LOTUS) ----------
           Positioned(
             top: 0,
             left: 0,
@@ -694,54 +695,70 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Container(
               height: topBarHeight,
               color: cardColor,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: SafeArea(
                 bottom: false,
-                child: Row(
+                child: Stack(
+                  alignment: Alignment.center,
                   children: [
-                    IconButton(
-                      icon: Icon(Icons.menu, color: purple, size: 28),
-                      onPressed: () => setState(() => isProfileOpen = true),
-                    ),
-                    // Spacer removed because we want perfect center for lotus — use Expanded + Stack to absolutely center
-                    Expanded(
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // invisible row so left and right areas keep their sizes
-                          Row(
-                            children: [
-                              const SizedBox(width: 48), // room for menu
-                              const Spacer(),
-                              const SizedBox(width: 110), // room for right widget
-                            ],
-                          ),
-                          // centered lotus
-                          Align(
-                            alignment: Alignment.center,
-                            child: Image.asset('assets/images/lotus.png', height: topBarHeight * 0.55),
-                          ),
-                        ],
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopPlaceholderScreen()));
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5, offset: const Offset(2,2))],
+
+                    // ------------- ROW (menu + points) -------------
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.menu, color: purple, size: 28),
+                          onPressed: widget.onOpenProfile, // просто вызываем колбэк родителя
                         ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.star, color: purple, size: 22),
-                            const SizedBox(width: 6),
-                            Text('$userPoints', style: TextStyle(color: purple, fontSize: 18, fontWeight: FontWeight.bold)),
-                          ],
+
+                        const Spacer(),
+
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8), // ← регулируешь тут
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const ShopPlaceholderScreen()),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: cardColor,
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black12,
+                                    blurRadius: 5,
+                                    offset: Offset(2, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.star, color: purple, size: 22),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    '$userPoints',
+                                    style: TextStyle(
+                                      color: purple,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
+
+                      ],
+                    ),
+
+                    // ------------- ABSOLUTELY CENTERED LOTUS -------------
+                    IgnorePointer(
+                      child: Image.asset(
+                        'assets/images/lotus.png',
+                        height: topBarHeight * 49,
                       ),
                     ),
                   ],
@@ -749,67 +766,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-
-          // --------------- profile drawer (overlay) ---------------
-          if (isProfileOpen) ...[
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => setState(()=>isProfileOpen=false),
-                child: Container(color: Colors.black.withOpacity(0.4)),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeInOut,
-                width: panelWidth,
-                child: SafeArea(
-                  child: Container(
-                    color: cardColor,
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // header: name + theme toggle
-                        Row(
-                          children: [
-                            Expanded(child: Text(fullName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor))),
-                            IconButton(icon: Icon(isDarkTheme ? Icons.wb_sunny : Icons.nightlight_round, color: purple), onPressed: () async {
-                              final prefs = await _prefs();
-                              prefs.setBool('isDarkTheme', !isDarkTheme);
-                              setState(()=>isDarkTheme = !isDarkTheme);
-                            }),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text('Пол: ---', style: TextStyle(color: textColor)),
-                        Text('Возраст: ---', style: TextStyle(color: textColor)),
-                        Text('Email: ---', style: TextStyle(color: textColor)),
-                        const Spacer(),
-                        OutlinedButton(onPressed: () {}, child: const Text('Настройки')),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            try { await Supabase.instance.client.auth.signOut(); } catch (_) {}
-                            final prefs = await _prefs();
-                            await prefs.clear();
-                            if (context.mounted) Navigator.of(context).pushReplacementNamed('/');
-                          },
-                          icon: const Icon(Icons.exit_to_app),
-                          label: const Text('Выйти'),
-                          style: ElevatedButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
