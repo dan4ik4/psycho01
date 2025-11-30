@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'catalog_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'auth_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({Key? key}) : super(key: key);
@@ -183,13 +185,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         OutlinedButton(onPressed: () {}, child: const Text('Настройки')),
                         const SizedBox(height: 8),
                         ElevatedButton.icon(
-                          onPressed: () {
-                            // логика выхода/очистки
+                          onPressed: () async {
+                            await Supabase.instance.client.auth.signOut();
+
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => AuthScreen()),
+                                  (route) => false,
+                            );
                           },
                           icon: const Icon(Icons.exit_to_app),
                           label: const Text('Выйти'),
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: purple, foregroundColor: Colors.white),
+                            backgroundColor: purple,
+                            foregroundColor: Colors.white,
+                          ),
                         ),
                       ],
                     ),

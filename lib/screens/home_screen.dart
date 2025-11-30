@@ -32,9 +32,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int userPoints = 0;
   String fullName = 'Пользователь';
 
+  bool saving = false;
+
   // calendar/notes
   Map<String, Map<String, dynamic>> notesByDate = {}; // key: 'YYYY-MM-DD' -> {'text', 'createdAt'}
   late DateTime visibleMonth; // used to show month in calendar
+
+  String formatDate(String iso) {
+    try {
+      final dt = DateTime.parse(iso);
+      String two(int n) => n.toString().padLeft(2, '0');
+
+      return "${two(dt.day)}.${two(dt.month)}.${dt.year}  ${two(dt.hour)}:${two(dt.minute)}";
+    } catch (_) {
+      return iso;
+    }
+  }
 
   // bottom nav (kept for completeness)
   int _selectedIndex = 0;
@@ -116,55 +129,69 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String _noteId() => DateTime.now().microsecondsSinceEpoch.toString();
 
 // Add a new note to a day
-  Future<void> _addNoteForDay(DateTime day, String text) async {
+  Future<String> _addNoteForDay(DateTime day, String text) async {
     final prefs = await _prefs();
     final key = _notesKeyForDate(day);
+
     final nowIso = DateTime.now().toIso8601String();
-    final newNote = {'id': _noteId(), 'text': text, 'createdAt': nowIso};
+    final newId = _noteId();
+
+    final newNote = {'id': newId, 'text': text, 'createdAt': nowIso};
+
+    // читаем старые заметки
     final raw = prefs.getString(key);
     List<dynamic> arr = [];
     if (raw != null) {
       try {
         arr = jsonDecode(raw) as List<dynamic>;
-      } catch (_) { arr = []; }
+      } catch (_) {
+        arr = [];
+      }
     }
+
+    // добавляем новую
     arr.add(newNote);
+
+    // сохраняем
     await prefs.setString(key, jsonEncode(arr));
 
-    // award points only once per date: check flag (keep original award logic)
+    // -------------- начисление поинтов --------------
     final awardedKey = 'points_awarded_${_dateKey(day)}';
     final alreadyAwarded = prefs.getBool(awardedKey) ?? false;
     final createdAt = DateTime.now();
-    final sameDay = createdAt.year == day.year && createdAt.month == day.month && createdAt.day == day.day;
+    final sameDay =
+        createdAt.year == day.year &&
+            createdAt.month == day.month &&
+            createdAt.day == day.day;
+
     if (!alreadyAwarded && sameDay) {
       userPoints += 1;
       await prefs.setInt('user_points', userPoints);
       await prefs.setBool(awardedKey, true);
     }
 
-    // update in-memory map: store items + legacy fields
-    final dateKey = _dateKey(day);
-    final items = arr.map((e) => e as Map<String, dynamic>).toList();
-    setState(() {
-      notesByDate[dateKey] = {
-        'items': items,
-        'text': items.isNotEmpty ? (items.last['text'] ?? '') : '',
-        'createdAt': items.isNotEmpty ? (items.last['createdAt'] ?? '') : '',
-      };
-    });
+    // ⚠️ ВАЖНО: НЕ ДЕЛАТЬ setState() ЗДЕСЬ!
+
+    return newId;
   }
 
 // Update an existing note by id
   Future<void> _updateNoteForDay(DateTime day, String noteId, String newText) async {
     final prefs = await _prefs();
     final key = _notesKeyForDate(day);
+
     final raw = prefs.getString(key);
     if (raw == null) return;
+
     List<dynamic> arr;
     try {
       arr = jsonDecode(raw) as List<dynamic>;
-    } catch (_) { return; }
+    } catch (_) {
+      return;
+    }
+
     bool changed = false;
+
     for (var i = 0; i < arr.length; i++) {
       final n = arr[i] as Map<String, dynamic>;
       if (n['id'] == noteId) {
@@ -175,17 +202,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         break;
       }
     }
+
     if (!changed) return;
+
     await prefs.setString(key, jsonEncode(arr));
-    final dateKey = _dateKey(day);
-    final items = arr.map((e) => e as Map<String, dynamic>).toList();
-    setState(() {
-      notesByDate[dateKey] = {
-        'items': items,
-        'text': items.isNotEmpty ? (items.last['text'] ?? '') : '',
-        'createdAt': items.isNotEmpty ? (items.last['createdAt'] ?? '') : '',
-      };
-    });
+
+    // ⚠️ ВАЖНО: ТУТ ТОЖЕ НЕ ДЕЛАЕМ setState()
   }
 
 // Delete a note by id for a day (if noteId == null, delete all notes for that day)
@@ -264,35 +286,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _openDaySheet(DateTime day) {
     final dateKey = _dateKey(day);
     final existing = notesByDate[dateKey];
-    final List<Map<String, dynamic>> items = List<Map<String,dynamic>>.from(existing != null && existing['items'] != null ? existing['items'] as List : []);
-    // controller used for new note / editing
+    // создаём локальную копию списка заметок (будем модифицировать)
+    final List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(
+        existing != null && existing['items'] != null ? existing['items'] as List : []);
+
     final newController = TextEditingController();
     String? editingId;
+
+    bool saving = false; // блокировка кнопки сохранения
+    bool confirmShown = false; // чтобы диалог не показывался дважды
+    String? newlyAddedId; // id заметки, которая только что добавлена (для анимации)
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      // НЕ закрываем по тапу вне и по свайпу — это предотвращает потерю незасэйвенной заметки.
+      isDismissible: false,
+      enableDrag: false,
       builder: (ctx) {
         return StatefulBuilder(builder: (context, setModalState) {
+          // локальные флаги для модалки
+
+
           void refreshFromMemory() {
             final mem = notesByDate[dateKey];
             setModalState(() {
               items.clear();
               if (mem != null && mem['items'] != null) {
-                final list = mem['items'] as List;
-                items.addAll(list.map((e) => Map<String,dynamic>.from(e as Map)));
+                items.addAll((mem['items'] as List).map((e) => Map<String, dynamic>.from(e)));
               }
             });
           }
 
           return WillPopScope(
             onWillPop: () async {
-              // no special unsaved check for list mode
+              // перехват аппаратной кнопки "назад"
+              if (!confirmShown && newController.text.trim().isNotEmpty && editingId == null) {
+                confirmShown = true;
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text("Закрыть без сохранения?"),
+                    content: const Text("Текущая заметка не сохранена."),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Нет")),
+                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Да")),
+                    ],
+                  ),
+                );
+                confirmShown = false;
+                return confirm == true;
+              }
               return true;
             },
             child: GestureDetector(
-              onTap: () {}, // prevent closing by tapping sheet itself
+              onTap: () {}, // не закрываем по тапу
               child: DraggableScrollableSheet(
                 initialChildSize: 0.65,
                 minChildSize: 0.3,
@@ -308,117 +357,240 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // header
                         Row(
                           children: [
-                            Expanded(child: Text('Записи на ${day.day}.${day.month}.${day.year}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDarkTheme ? Colors.white : Colors.black87))),
-                            IconButton(icon: Icon(Icons.close, color: purple), onPressed: () => Navigator.pop(ctx)),
+                            Expanded(
+                              child: Text(
+                                'Записи на ${day.day}.${day.month}.${day.year}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDarkTheme ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, color: purple),
+                              onPressed: () async {
+                                if (!confirmShown && newController.text.trim().isNotEmpty && editingId == null) {
+                                  confirmShown = true;
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (_) => AlertDialog(
+                                      title: const Text("Закрыть без сохранения?"),
+                                      content: const Text("Текущая заметка не сохранена."),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Отмена")),
+                                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Закрыть")),
+                                      ],
+                                    ),
+                                  );
+                                  confirmShown = false;
+                                  if (confirm != true) return;
+                                }
+                                Navigator.of(ctx).pop(); // корректно закрываем
+                              },
+                            ),
                           ],
                         ),
+
                         const SizedBox(height: 8),
 
-                        // input area: either new note or editing existing
+                        // input area: height smaller / nicer
                         TextField(
                           controller: newController,
-                          maxLines: 4,
+                          maxLines: 3, // <-- здесь можно поменять высоту
+                          minLines: 2,
                           decoration: InputDecoration(
                             hintText: editingId == null ? 'Напишите новую заметку...' : 'Редактирование заметки...',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), // радиус поля
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), // <-- тут можно поменять высоту внутреннего отступа
                             filled: true,
-                            fillColor: isDarkTheme ? Colors.grey[800] : Colors.grey[100],
+                            fillColor: isDarkTheme ? Colors.grey[850] : Colors.grey[100],
                           ),
                         ),
+
                         const SizedBox(height: 8),
+
+                        // save button row
                         Row(
                           children: [
                             ElevatedButton.icon(
-                              icon: const Icon(Icons.save),
-                              label: Text(editingId == null ? 'Добавить' : 'Сохранить'),
+                              icon: const Icon(Icons.check, color: Colors.white),
+                              label: const Text("Сохранить", style: TextStyle(color: Colors.white)),
                               style: ElevatedButton.styleFrom(backgroundColor: purple),
                               onPressed: () async {
                                 final txt = newController.text.trim();
                                 if (txt.isEmpty) return;
-                                if (editingId == null) {
-                                  await _addNoteForDay(day, txt);
-                                } else {
-                                  await _updateNoteForDay(day, editingId!, txt);
-                                  editingId = null;
-                                }
-                                // сразу обновляем локальный список и UI модального окна:
-                                newController.clear();
-                                // refreshFromMemory использует setModalState() — вызываем её для немедленного обновления
-                                refreshFromMemory();
-                                // небольшая анимация фокуса/пульсации (необязательно), но можно сделать setModalState пустым вызовом:
-                                // setModalState((){});
-                              },
 
+                                if (editingId == null) {
+                                  // ---------- СОЗДАНИЕ НОВОЙ ЗАМЕТКИ ----------
+                                  final id = await _addNoteForDay(day, txt);
+
+                                  final newItem = {
+                                    "id": id,
+                                    "text": txt,
+                                    "createdAt": DateTime.now().toIso8601String(),
+                                  };
+
+                                  // новые заметки сверху
+                                  items.insert(0, newItem);
+
+                                  // обновление глобального кэша (обязательно!)
+                                  notesByDate[dateKey] = {
+                                    "items": List<Map<String, dynamic>>.from(items),
+                                    "text": items.first["text"] ?? "",
+                                    "createdAt": items.first["createdAt"] ?? "",
+                                  };
+
+                                  newlyAddedId = id;
+                                  newController.clear(); // очистка поля ввода
+                                }
+                                else {
+                                  // ------------- РЕДАКТИРОВАНИЕ -------------
+                                  await _updateNoteForDay(day, editingId!, txt);
+
+                                  final idx = items.indexWhere((e) => e["id"] == editingId);
+                                  if (idx != -1) {
+                                    items[idx]["text"] = txt;
+                                    items[idx]["createdAt"] = DateTime.now().toIso8601String();
+                                  }
+
+                                  // обновление глобального кэша
+                                  notesByDate[dateKey] = {
+                                    "items": List<Map<String, dynamic>>.from(items),
+                                    "text": items.first["text"] ?? "",
+                                    "createdAt": items.first["createdAt"] ?? "",
+                                  };
+
+                                  editingId = null;
+                                  newController.clear(); // ←←← САМОЕ ВАЖНОЕ!
+                                }
+
+                                if (context.mounted) setModalState(() {});
+                                if (mounted) setState(() {});
+
+                                Future.delayed(const Duration(milliseconds: 700), () {
+                                  if (context.mounted) {
+                                    setModalState(() => newlyAddedId = null);
+                                  }
+                                });
+                              },
                             ),
+
                             const SizedBox(width: 12),
+
                             if (editingId != null)
                               OutlinedButton(
                                 onPressed: () {
                                   editingId = null;
                                   newController.clear();
-                                  setModalState((){});
+                                  setModalState(() {});
                                 },
                                 child: const Text('Отмена'),
                               ),
                           ],
                         ),
+
                         const SizedBox(height: 12),
 
-                        // list of notes
-                        if (items.isEmpty) ...[
-                          Text('Заметок пока нет.', style: TextStyle(color: isDarkTheme ? Colors.white70 : Colors.black54)),
-                        ] else
+                        // list of notes — с анимацией для только что добавленной
+                        if (items.isEmpty)
+                          Text('Заметок пока нет.', style: TextStyle(color: isDarkTheme ? Colors.white70 : Colors.black54))
+                        else
                           Column(
-                            children: items.reversed.map((note) {
+                            children: items.map((note) {
                               final id = note['id']?.toString() ?? '';
                               final text = note['text']?.toString() ?? '';
                               final createdAt = note['createdAt']?.toString() ?? '';
-                              return Card(
+
+                              final bool isNew = (id == newlyAddedId);
+
+                              final Widget card = Card(
                                 color: isDarkTheme ? Colors.grey[850] : Colors.white,
                                 child: ListTile(
-                                  title: Text(text, style: TextStyle(color: isDarkTheme ? Colors.white : Colors.black87)),
-                                  subtitle: Text(createdAt, style: TextStyle(fontSize: 11, color: isDarkTheme ? Colors.white60 : Colors.black54)),
-                                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    IconButton(
-                                      icon: Icon(Icons.edit, color: purple),
-                                      onPressed: () {
-                                        editingId = id;
-                                        newController.text = text;
-                                        setModalState((){});
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.delete, color: Colors.redAccent),
-                                      onPressed: () async {
-                                        final confirmed = await showDialog<bool>(
-                                          context: context,
-                                          builder: (dctx) => AlertDialog(
-                                            title: const Text('Удалить заметку?'),
-                                            actions: [
-                                              TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Нет')),
-                                              TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Да')),
-                                            ],
-                                          ),
-                                        );
-                                        if (confirmed == true) {
-                                          await _deleteNoteById(day, noteId: id);
-                                          refreshFromMemory();
-                                        }
-                                      },
-                                    ),
-                                  ]),
-                                  onTap: () {
-                                    // quick edit on tap
-                                    editingId = id;
-                                    newController.text = text;
-                                    setModalState((){});
-                                  },
+                                  title: Text(
+                                    text,
+                                    style: TextStyle(color: isDarkTheme ? Colors.white : Colors.black87),
+                                  ),
+                                  subtitle: Text(
+                                    formatDate(createdAt),
+                                    style: TextStyle(fontSize: 11, color: isDarkTheme ? Colors.white60 : Colors.black54),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // ---- EDIT ----
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, color: Colors.deepPurple),
+                                        onPressed: () {
+                                          editingId = id;
+                                          newController.text = text;
+                                          setModalState(() {});
+                                        },
+                                      ),
+
+                                      // ---- DELETE ----
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                        onPressed: () async {
+                                          FocusScope.of(context).unfocus();
+
+                                          final confirm = await showDialog<bool>(
+                                            context: context,
+                                            builder: (dctx) => AlertDialog(
+                                              title: const Text("Удалить заметку?"),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text("Нет")),
+                                                TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text("Да")),
+                                              ],
+                                            ),
+                                          );
+
+                                          if (confirm == true) {
+                                            await _deleteNoteById(day, noteId: id);
+
+                                            items.removeWhere((e) => e["id"].toString() == id);
+
+                                            notesByDate[dateKey] = {
+                                              "items": List<Map<String, dynamic>>.from(items),
+                                              "text": items.isNotEmpty ? items.first["text"] : "",
+                                              "createdAt": items.isNotEmpty ? items.first["createdAt"] : "",
+                                            };
+
+                                            if (editingId == id) {
+                                              editingId = null;
+                                              newController.clear();
+                                            }
+
+                                            setModalState(() {});
+                                            if (mounted) setState(() {});
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               );
+
+                              if (!isNew) return card;
+
+                              // ---- АНІМАЦИЯ: Появление сверху ----
+                              return TweenAnimationBuilder<double>(
+                                key: ValueKey(id),
+                                tween: Tween(begin: -20.0, end: 0.0),
+                                duration: const Duration(milliseconds: 350),
+                                builder: (context, value, child) {
+                                  return Transform.translate(
+                                    offset: Offset(0, value),
+                                    child: Opacity(opacity: 1 - (value.abs() / 20), child: child),
+                                  );
+                                },
+                                child: card,
+                              );
                             }).toList(),
-                          ),
+                          )
                       ],
                     ),
                   ),
@@ -430,7 +602,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       },
     ).whenComplete(() => setState(() {}));
   }
-
 
   // ------------------- UI build -------------------
   @override
@@ -484,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Здравствуйте, $fullName 👋',
+                              'Здравствуйте, $fullName',
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
