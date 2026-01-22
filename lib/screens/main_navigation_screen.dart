@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
-import 'catalog_screen.dart';
+import 'SpecialistSelectionScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_screen.dart';
 
@@ -53,7 +53,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final List<Widget> screens = [
       HomeScreen(onOpenProfile: () => setState(() => isProfileOpen = true)),
       ChatScreen(),
-      CatalogScreen(),
+      SpecialistListScreen(),
     ];
 
     return Scaffold(
@@ -89,8 +89,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             bottom: 0,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              height: bottomBgHeight + bottomInset,
-              padding: EdgeInsets.only(bottom: bottomInset - 2),
+              // Используем clamp, чтобы высота не стала меньше 0
+              height: (bottomBgHeight + bottomInset).clamp(0.0, 200.0),
+              padding: EdgeInsets.only(
+                // math.max гарантирует, что значение не упадет ниже 0
+                bottom: (bottomInset - 2).clamp(0.0, 100.0),
+              ),
               decoration: BoxDecoration(
                 color: cardColor,
                 boxShadow: [

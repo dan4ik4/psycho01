@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'breathing_screen.dart';
-import 'catalog_screen.dart';
+import 'SpecialistSelectionScreen.dart';
 import 'chat_screen.dart';
 import 'plan_screen.dart';
 import 'shop_placeholder_screen.dart';
