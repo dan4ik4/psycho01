@@ -1,18 +1,13 @@
-import uuid
-from sqlalchemy import String, Boolean, TIMESTAMP, func, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from app.core.db import Base
-
 import enum
-
+import uuid
 from datetime import datetime
 
-from sqlalchemy.orm import relationship
+from fastapi_users.db import SQLAlchemyBaseUserTableUUID
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, String, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-profile = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+from app.db.base import Base
 
 
 class UserRole(str, enum.Enum):
@@ -24,14 +19,6 @@ class UserRole(str, enum.Enum):
 class User(SQLAlchemyBaseUserTableUUID, Base):
     __tablename__ = "users"
 
-    profile = relationship(
-        "Profile",
-        back_populates="user",
-        uselist=False,
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     email: Mapped[str] = mapped_column(String(length=320), unique=True, index=True, nullable=False)
@@ -41,18 +28,30 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.user, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(UserRole, name="userrole", native_enum=True),
+        default=UserRole.user,
+        nullable=False,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
+        DateTime(timezone=True),
         server_default=func.now(),
-        nullable=False
+        nullable=False,
+    )
+
+    profile = relationship(
+        "Profile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     psychologist_profile = relationship(
-    "PsychologistProfile",
-    back_populates="user",
-    uselist=False,
-    cascade="all, delete-orphan",
-    passive_deletes=True,
-)
+        "PsychologistProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

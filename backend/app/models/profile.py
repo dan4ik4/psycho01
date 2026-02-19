@@ -1,9 +1,11 @@
 import uuid
+
+from sqlalchemy import Column, Date, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import Column, ForeignKey, String, Text, Date, Integer
 from sqlalchemy.orm import relationship
 
-from app.core.db import Base
+from app.db.base import Base
+
 
 class Profile(Base):
     __tablename__ = "profiles"
@@ -25,4 +27,4 @@ class Profile(Base):
     telegram = Column(String(64))
     birth_date = Column(Date)
 
-    user = relationship("User", back_populates="profile", uselist=False)
+    user = relationship("User", back_populates="profile", passive_deletes=True)

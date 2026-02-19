@@ -1,24 +1,23 @@
 from fastapi import APIRouter
 
-from app.auth.deps import fastapi_users, auth_backend
-
-from app.routes import profile as profile_router
-from app.routes import users_me
-from app.routes import users_admin
-from app.routes import psychologist_profile
-from app.schemas.user import UserRead, UserCreate
+from app.auth.deps import auth_backend, fastapi_users
+from app.routes.health import router as health_router
+from app.routes.profile import router as profile_router
+from app.routes.psychologist_profile import router as psychologist_profile_router
+from app.routes.users_admin import router as users_admin_router
+from app.routes.users_me import router as users_me_router
+from app.schemas.user import UserCreate, UserRead
 
 api = APIRouter(prefix="/api/v1")
 
 # health
-@api.get("/health")
-async def health():
-    return {"status": "ok"}
+api.include_router(health_router)
 
 # profile
-api.include_router(profile_router.router)
+api.include_router(profile_router)
+api.include_router(psychologist_profile_router)
 
-# --- auth из fastapi-users (логин/регистрация) ---
+# auth (fastapi-users)
 api.include_router(
     fastapi_users.get_auth_router(auth_backend),
     prefix="/auth/jwt",
@@ -30,7 +29,6 @@ api.include_router(
     tags=["auth"],
 )
 
-# --- наши кастомные /users (me и {id}) ---
-api.include_router(users_me.router)
-api.include_router(users_admin.router)
-api.include_router(psychologist_profile.router)
+# users
+api.include_router(users_me_router)
+api.include_router(users_admin_router)

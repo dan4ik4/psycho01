@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import ForeignKey, String, Enum as SAEnum, TIMESTAMP, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.core.db import Base
+from app.db.base import Base
 import enum
 
 class SessionStatus(str, enum.Enum):

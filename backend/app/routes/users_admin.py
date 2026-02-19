@@ -1,40 +1,36 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from app.models.user import User, UserRole
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from app.auth.deps import get_async_session
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.permissions import require_owner, require_owner_or_psychologist
+from app.db.deps import get_db
+from app.models.user import User
 from app.schemas.user import UserRead, UserAdminUpdate
 
 router = APIRouter(prefix="/users", tags=["admin-users"])
+
 
 @router.get("/{id}", response_model=UserRead, summary="Get user by id (psychologist/owner)")
 async def get_user_by_id(
     id: UUID,
     _: User = Depends(require_owner_or_psychologist),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
-    stmt = select(User).where(User.id == id)
-    res = await session.execute(stmt)
+    res = await session.execute(select(User).where(User.id == id))
     user = res.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
-class UserAdminUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    is_active: Optional[bool] = None
-    role: Optional[UserRole] = None
 
 @router.patch("/{id}", response_model=UserRead, summary="Update user by id (owner)")
 async def update_user_by_id(
     id: UUID,
     data: UserAdminUpdate,
     _: User = Depends(require_owner),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     res = await session.execute(select(User).where(User.id == id))
     user = res.scalar_one_or_none()
@@ -46,11 +42,12 @@ async def update_user_by_id(
             select(User.id).where(User.email == data.email, User.id != id)
         )
         if email_exists.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail="Email already in use")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
         user.email = data.email
 
     if data.is_active is not None:
         user.is_active = data.is_active
+
     if data.role is not None:
         user.role = data.role
 
@@ -58,16 +55,17 @@ async def update_user_by_id(
     await session.refresh(user)
     return user
 
-@router.delete("/{id}", status_code=204, summary="Delete user by id (owner)")
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete user by id (owner)")
 async def delete_user_by_id(
     id: UUID,
     _: User = Depends(require_owner),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     res = await session.execute(select(User).where(User.id == id))
     user = res.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     await session.delete(user)
     await session.commit()

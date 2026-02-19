@@ -5,12 +5,19 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from app.core.db import Base
+from app.db.base import Base
 import app.models.user
 import app.models.profile
 import app.models.psychologist_profile
+from app.core.settings import settings
 
 config = context.config
+
+db_url = settings.DATABASE_URL
+if "postgresql+asyncpg://" in db_url:
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+
+config.set_main_option("sqlalchemy.url", db_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
