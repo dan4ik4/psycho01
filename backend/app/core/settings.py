@@ -7,6 +7,16 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASS: str
     JWT_SECRET: str = "SUPERSECRET"
+    
+    SMTP_HOST: str
+    SMTP_PORT: int = 587
+    SMTP_USER: str
+    SMTP_PASSWORD: str
+    SMTP_FROM: str
+
+    REG_CODE_SECRET: str
+    REG_CODE_TTL_MINUTES: int = 10
+
 
     @property
     def DATABASE_URL(self) -> str:

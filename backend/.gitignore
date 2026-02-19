@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.env
+.venv/
+env/
+ENV/
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Alembic
+alembic/versions/__pycache__/
+
+# Testing / temp
+mtest.py
+notes.md
+
+# Docker
+*.env
+docker-compose.override.yml
+
+# Coverage
+.coverage
+htmlcov/
+
+# Migrations (если вдруг автоген создаёт мусор)
+*.sqlite3
