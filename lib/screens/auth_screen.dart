@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'home_screen.dart';
 import 'main_navigation_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -16,45 +15,48 @@ class _AuthScreenState extends State<AuthScreen> {
   // Контроллеры для регистрации
   final regEmailController = TextEditingController();
   final regPasswordController = TextEditingController();
-  final fioController = TextEditingController(); // 🟣 Для регистрации
-  final ageController = TextEditingController(); // 🟣 Возраст
+  final fioController = TextEditingController();
+  final ageController = TextEditingController();
 
-  String? selectedGender; // 🟣 Мужской / Женский
+  String? selectedGender;
+  String selectedRole = 'client'; // 🟣 По умолчанию роль - клиент
 
   final _formKey = GlobalKey<FormState>();
-
   bool isLogin = true;
+
+  final Color purple = const Color(0xFF5E3B8C);
 
   /// 🟣 Метод входа / регистрации
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     try {
-      if (isLogin) {
-        final email = loginEmailController.text.trim();
-        final password = loginPasswordController.text;
+      final supabase = Supabase.instance.client;
 
-        await Supabase.instance.client.auth.signInWithPassword(
-          email: email,
-          password: password,
+      if (isLogin) {
+        await supabase.auth.signInWithPassword(
+          email: loginEmailController.text.trim(),
+          password: loginPasswordController.text,
         );
       } else {
-        final email = regEmailController.text.trim();
-        final password = regPasswordController.text;
-        final fio = fioController.text.trim();
-        final age = int.parse(ageController.text.trim());
+        // Проверка выбора пола перед отправкой
+        if (selectedGender == null) {
+          throw "Пожалуйста, выберите пол";
+        }
 
-        await Supabase.instance.client.auth.signUp(
-          email: email,
-          password: password,
+        await supabase.auth.signUp(
+          email: regEmailController.text.trim(),
+          password: regPasswordController.text,
           data: {
-            'full_name': fio,
+            'full_name': fioController.text.trim(),
             'gender': selectedGender,
-            'age': age,
+            'age': int.parse(ageController.text.trim()),
+            'role': selectedRole, // 🟣 Сохраняем роль в базу
           },
         );
       }
 
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => MainNavigationScreen()),
@@ -67,10 +69,8 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  /// 🟣 Диалог входа / регистрации
-  /// Замените текущий метод _showAuthDialog() этим кодом
   void _showAuthDialog() {
-    // 🟣 Каждый раз при открытии окна — очищаем поля и скрываем пароль
+    // Очистка полей
     loginEmailController.clear();
     loginPasswordController.clear();
     regEmailController.clear();
@@ -78,195 +78,120 @@ class _AuthScreenState extends State<AuthScreen> {
     fioController.clear();
     ageController.clear();
     selectedGender = null;
+    selectedRole = 'client';
 
-    bool obscurePassword = true; // 🟣 Локальное состояние для диалога
+    bool obscurePassword = true;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) => AlertDialog(
-          // Уменьшаем горизонтальные отступы диалога на 10px с каждой стороны,
-          // чтобы общая ширина диалога увеличилась на 20px.
-          insetPadding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 24.0),
-
-          title: Text(isLogin ? 'Вход' : 'Регистрация'),
-          content: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-
-                // 🟣 Только при регистрации — ФИО
-                if (!isLogin)
-                  TextFormField(
-                    controller: fioController,
-                    decoration: const InputDecoration(labelText: 'ФИО'),
-                    validator: (value) =>
-                    value == null || value.isEmpty ? 'Введите ФИО' : null,
-                  ),
-
-                // 🟣 Только при регистрации — ПОЛ
-                if (!isLogin)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12, bottom: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          title: Text(isLogin ? 'С возвращением!' : 'Создать аккаунт',
+              style: TextStyle(color: purple, fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 🟣 ВЫБОР РОЛИ (Красивые переключатели в твоем стиле)
+                  if (!isLogin) ...[
+                    _buildSectionTitle("Кто вы?"),
+                    Row(
                       children: [
-                        const Text("Пол:  "),
-                        GestureDetector(
-                          onTap: () {
-                            setStateDialog(() => selectedGender = 'Мужской');
-                          },
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.deepPurple),
-                                ),
-                                child: selectedGender == 'Мужской'
-                                    ? Center(
-                                  child: Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.deepPurple,
-                                    ),
-                                  ),
-                                )
-                                    : null,
-                              ),
-                              const SizedBox(width: 6),
-                              const Text("Мужской"),
-                            ],
-                          ),
+                        _customRadioButton(
+                          title: "Клиент",
+                          isSelected: selectedRole == 'client',
+                          onTap: () => setStateDialog(() => selectedRole = 'client'),
                         ),
-                        const SizedBox(width: 20),
-                        GestureDetector(
-                          onTap: () {
-                            setStateDialog(() => selectedGender = 'Женский');
-                          },
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.deepPurple),
-                                ),
-                                child: selectedGender == 'Женский'
-                                    ? Center(
-                                  child: Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.deepPurple,
-                                    ),
-                                  ),
-                                )
-                                    : null,
-                              ),
-                              const SizedBox(width: 6),
-                              const Text("Женский"),
-                            ],
-                          ),
+                        const SizedBox(width: 15),
+                        _customRadioButton(
+                          title: "Психолог",
+                          isSelected: selectedRole == 'specialist',
+                          onTap: () => setStateDialog(() => selectedRole = 'specialist'),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    const Divider(),
+                  ],
+
+                  if (!isLogin) ...[
+                    _buildTextField(fioController, 'ФИО', Icons.person_outline),
+
+                    // 🟣 Твой оригинальный выбор пола
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 8),
+                      child: Row(
+                        children: [
+                          const Text("Пол:  ", style: TextStyle(fontWeight: FontWeight.w500)),
+                          _genderRadio(setStateDialog, 'Мужской'),
+                          const SizedBox(width: 20),
+                          _genderRadio(setStateDialog, 'Женский'),
+                        ],
+                      ),
+                    ),
+
+                    _buildTextField(ageController, 'Возраст', Icons.calendar_today, isNum: true),
+                  ],
+
+                  _buildTextField(
+                      isLogin ? loginEmailController : regEmailController,
+                      'Email',
+                      Icons.email_outlined
                   ),
 
-                // 🟣 Только при регистрации — ВОЗРАСТ
-                if (!isLogin)
                   TextFormField(
-                    controller: ageController,
-                    decoration: const InputDecoration(labelText: 'Возраст'),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) return 'Введите возраст';
-                      final n = int.tryParse(value);
-                      if (n == null || n < 1 || n > 150) return 'Возраст 1–150';
-                      return null;
-                    },
-                  ),
-
-                TextFormField(
-                  controller: isLogin ? loginEmailController : regEmailController,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                  validator: (value) =>
-                  value == null || value.isEmpty ? 'Введите email' : null,
-                ),
-
-                TextFormField(
-                  controller:
-                  isLogin ? loginPasswordController : regPasswordController,
-                  obscureText: obscurePassword,
-                  decoration: InputDecoration(
-                    labelText: 'Пароль',
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    controller: isLogin ? loginPasswordController : regPasswordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Пароль',
+                      prefixIcon: Icon(Icons.lock_outline, color: purple, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                        onPressed: () => setStateDialog(() => obscurePassword = !obscurePassword),
                       ),
-                      onPressed: () {
-                        setStateDialog(() {
-                          obscurePassword = !obscurePassword;
-                        });
-                      },
                     ),
+                    validator: (value) => value == null || value.length < 6 ? 'Минимум 6 символов' : null,
                   ),
-                  validator: (value) =>
-                  value == null || value.length < 6 ? 'Минимум 6 символов' : null,
-                ),
 
-                if (isLogin)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Align(
+                  if (isLogin)
+                    Align(
                       alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Функция восстановления пароля в разработке')),
-                          );
-                        },
-                        child: const Text(
-                          'Забыли пароль?',
-                          style: TextStyle(
-                            color: Colors.deepPurple,
-                            fontSize: 14,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
+                      child: TextButton(
+                        onPressed: () {},
+                        child: Text('Забыли пароль?', style: TextStyle(color: purple, fontSize: 13)),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-
-          // Выравниваем actions влево и делаем две кнопки в строке (на одном уровне)
-          actionsAlignment: MainAxisAlignment.start,
           actions: [
             Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                ElevatedButton(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      Navigator.pop(context);
-                      _submit();
-                    }
-                  },
-                  child: Text(isLogin ? 'Войти' : 'Зарегистрироваться'),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: purple,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      if (_formKey.currentState!.validate()) {
+                        Navigator.pop(context);
+                        _submit();
+                      }
+                    },
+                    child: Text(isLogin ? 'Войти' : 'Зарегистрироваться', style: const TextStyle(color: Colors.white)),
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Отмена'),
+                  child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
                 ),
               ],
             ),
@@ -276,103 +201,137 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  // --- Маленькие вспомогательные виджеты для чистоты кода ---
+
+  Widget _buildSectionTitle(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, top: 4),
+    child: Align(alignment: Alignment.centerLeft, child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey))),
+  );
+
+  Widget _buildTextField(TextEditingController controller, String label, IconData icon, {bool isNum = false}) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: isNum ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: purple, size: 20),
+      ),
+      validator: (value) => value == null || value.isEmpty ? 'Заполните поле' : null,
+    );
+  }
+
+  Widget _customRadioButton({required String title, required bool isSelected, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? purple : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? purple : Colors.grey.shade300),
+        ),
+        child: Text(title, style: TextStyle(color: isSelected ? Colors.white : Colors.grey.shade600, fontWeight: FontWeight.bold, fontSize: 13)),
+      ),
+    );
+  }
+
+  Widget _genderRadio(StateSetter setStateDialog, String gender) {
+    return GestureDetector(
+      onTap: () => setStateDialog(() => selectedGender = gender),
+      child: Row(
+        children: [
+          Container(
+            width: 18, height: 18,
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: purple)),
+            child: selectedGender == gender
+                ? Center(child: Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: purple)))
+                : null,
+          ),
+          const SizedBox(width: 6),
+          Text(gender, style: const TextStyle(fontSize: 14)),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    const purple = Color(0xFF5E3B8C); // 🟣 Тёмно-фиолетовый
-    const bgColor = Color(0xFFF6F6FF); // Светлый фон
-
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: const Color(0xFFF6F6FF),
       body: SafeArea(
         child: Stack(
           children: [
             Column(
               children: [
-                const SizedBox(height: 0), // 🟣 поднял выше
-                Center(
-                  child: Image.asset(
-                    'assets/images/lotus.png',
-                    height: 200, // 🟣 уменьшил, чтобы поместилось
-                    width: 200,
-                  ),
-                ),
-
-                // 🟣 Welcome
-                Text(
-                  "Welcome",
-                  style: TextStyle(
-                    fontSize: 49, // Саня, мы всё помним)))))))))))))))))))))))))))
-                    fontWeight: FontWeight.bold,
-                    color: purple,
-                  ),
-                ),
-
-                const Spacer(), // 🟣 Добавляет "воздух"
-
-                // 🔘 Кнопки
+                const SizedBox(height: 20),
+                Center(child: Image.asset('assets/images/lotus.png', height: 180, width: 180)),
+                Text("Welcome", style: TextStyle(fontSize: 49, fontWeight: FontWeight.bold, color: purple)),
+                const Spacer(),
                 Padding(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       ElevatedButton(
-                        onPressed: () {
-                          setState(() => isLogin = true);
-                          _showAuthDialog();
-                        },
+                        onPressed: () { setState(() => isLogin = true); _showAuthDialog(); },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: purple,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
-                        child: const Text(
-                          'Вход',
-                          style: TextStyle(fontSize: 18, color: Colors.white),
-                        ),
+                        child: const Text('Вход', style: TextStyle(fontSize: 18, color: Colors.white)),
                       ),
                       const SizedBox(height: 16),
                       OutlinedButton(
-                        onPressed: () {
-                          setState(() => isLogin = false);
-                          _showAuthDialog();
-                        },
+                        onPressed: () { setState(() => isLogin = false); _showAuthDialog(); },
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: purple, width: 1.5),
+                          side: BorderSide(color: purple, width: 1.5),
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
-                        child: const Text(
-                          'Регистрация',
-                          style: TextStyle(fontSize: 18, color: purple),
-                        ),
+                        child: Text('Регистрация', style: TextStyle(fontSize: 18, color: purple)),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-
-            // 🧪 Test-кнопка
             Positioned(
               bottom: 16,
               right: 16,
-              child: FloatingActionButton(
-                mini: true,
-                backgroundColor: purple,
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => MainNavigationScreen()),
-                  );
-
-                },
-                child: const Text('test', style: TextStyle(fontSize: 12, color: Colors.white)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Тест для Психолога
+                  FloatingActionButton(
+                    heroTag: "test_pro",
+                    mini: true,
+                    backgroundColor: Colors.green,
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        // Передаем параметр 'specialist' напрямую
+                        MaterialPageRoute(builder: (_) => const MainNavigationScreen(forcedRole: 'specialist')),
+                      );
+                    },
+                    child: const Icon(Icons.psychology, size: 18, color: Colors.white),
+                  ),
+                  const SizedBox(height: 8),
+                  // Тест для Клиента
+                  FloatingActionButton(
+                    heroTag: "test_client",
+                    mini: true,
+                    backgroundColor: purple,
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        // Передаем параметр 'client' напрямую
+                        MaterialPageRoute(builder: (_) => const MainNavigationScreen(forcedRole: 'client')),
+                      );
+                    },
+                    child: const Text('test', style: TextStyle(fontSize: 10, color: Colors.white)),
+                  ),
+                ],
               ),
             ),
           ],

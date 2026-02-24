@@ -5,9 +5,13 @@ import 'chat_screen.dart';
 import 'SpecialistSelectionScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_screen.dart';
+import 'PsychologistDashboard.dart';
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({Key? key}) : super(key: key);
+  // 🟣 Добавляем параметр для принудительной роли (для тестов)
+  final String? forcedRole;
+
+  const MainNavigationScreen({Key? key, this.forcedRole}) : super(key: key);
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -15,25 +19,53 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
-
   final Color purple = const Color(0xFF5E3B8C);
   final Color cardColor = const Color(0xFFF6F6FF);
 
-  bool isProfileOpen = false; // <-- управление панелью настроек
+  bool isProfileOpen = false;
 
-  final List<Widget> _screensPlaceholder = []; // not used directly
+  String userName = "Пользователь";
+  String userEmail = "";
+  String userRole = "client";
+  String userGender = "---";
+  int userAge = 0;
 
   @override
   void initState() {
     super.initState();
+    _loadUserData();
 
-    // Настраиваем цвет системной панели (фон кнопок "назад", "домой")
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      systemNavigationBarColor: const Color(0xFFF6F6FF), // фон нижней панели
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      systemNavigationBarColor: Color(0xFFF6F6FF),
       systemNavigationBarIconBrightness: Brightness.dark,
-      statusBarColor: Colors.transparent, // прозрачный верхний бар
+      statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
     ));
+  }
+
+  // 🟣 Обновленный метод загрузки данных
+  void _loadUserData() {
+    // 1. Если роль передана принудительно (через тестовую кнопку)
+    if (widget.forcedRole != null) {
+      setState(() {
+        userRole = widget.forcedRole!;
+        userName = userRole == 'specialist' ? "Тестовый Профи" : "Тестовый Клиент";
+        userEmail = "test@example.com";
+      });
+      return; // Прекращаем выполнение, не опрашивая Supabase
+    }
+
+    // 2. Стандартная логика для реальных пользователей
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      setState(() {
+        userEmail = user.email ?? "";
+        userName = user.userMetadata?['full_name'] ?? "Не указано";
+        userRole = user.userMetadata?['role'] ?? "client";
+        userGender = user.userMetadata?['gender'] ?? "---";
+        userAge = user.userMetadata?['age'] ?? 0;
+      });
+    }
   }
 
   void _onItemTapped(int index) {
@@ -43,166 +75,145 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double bottomBgHeight = 60; // настройка высоты
+    final double bottomBgHeight = 60;
     final bottomInset = MediaQuery.of(context).padding.bottom;
-
-    // динамическая ширина панели настроек: 80% от ширины экрана
     final double panelWidth = MediaQuery.of(context).size.width * 0.8;
 
-    // Список экранов: передаём колбэк открытия панели в HomeScreen
     final List<Widget> screens = [
       HomeScreen(onOpenProfile: () => setState(() => isProfileOpen = true)),
       ChatScreen(),
-      SpecialistListScreen(),
+      userRole == 'specialist'
+          ? PsychologistDashboard()
+          : SpecialistListScreen(),
     ];
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          /// --- Основное содержимое ---
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 450),
             switchInCurve: Curves.fastOutSlowIn,
             switchOutCurve: Curves.fastOutSlowIn,
             transitionBuilder: (Widget child, Animation<double> animation) {
-              final slideAnimation = Tween<Offset>(
-                begin: const Offset(0.15, 0.0),
-                end: Offset.zero,
-              ).animate(animation);
-
-              return SlideTransition(
-                position: slideAnimation,
-                child: FadeTransition(opacity: animation, child: child),
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(animation),
+                  child: child,
+                ),
               );
             },
             child: KeyedSubtree(
-              key: ValueKey<int>(_selectedIndex),
+              key: ValueKey<int>(_selectedIndex + (userRole == 'specialist' ? 10 : 0)), // ключ меняется при смене роли
               child: screens[_selectedIndex],
             ),
           ),
 
-          /// --- Кастомная нижняя панель ---
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              // Используем clamp, чтобы высота не стала меньше 0
-              height: (bottomBgHeight + bottomInset).clamp(0.0, 200.0),
-              padding: EdgeInsets.only(
-                // math.max гарантирует, что значение не упадет ниже 0
-                bottom: (bottomInset - 2).clamp(0.0, 100.0),
-              ),
+            left: 0, right: 0, bottom: 0,
+            child: Container(
+              height: bottomBgHeight + bottomInset,
+              padding: EdgeInsets.only(bottom: bottomInset),
               decoration: BoxDecoration(
                 color: cardColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, -2))],
               ),
-              child: Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _NavButton(
-                      icon: Icons.home,
-                      selected: _selectedIndex == 0,
-                      color: purple,
-                      onTap: () => _onItemTapped(0),
-                    ),
-                    _NavButton(
-                      icon: Icons.chat,
-                      selected: _selectedIndex == 1,
-                      color: purple,
-                      onTap: () => _onItemTapped(1),
-                    ),
-                    _NavButton(
-                      icon: Icons.person,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _NavButton(icon: Icons.home_rounded, selected: _selectedIndex == 0, color: purple, onTap: () => _onItemTapped(0)),
+                  _NavButton(icon: Icons.chat_bubble_outline_rounded, selected: _selectedIndex == 1, color: purple, onTap: () => _onItemTapped(1)),
+                  _NavButton(
+                      icon: userRole == 'specialist' ? Icons.dashboard_customize_outlined : Icons.people_alt_outlined,
                       selected: _selectedIndex == 2,
                       color: purple,
-                      onTap: () => _onItemTapped(2),
-                    ),
-                  ],
-                ),
+                      onTap: () => _onItemTapped(2)
+                  ),
+                ],
               ),
             ),
           ),
 
-          /// --- PROFILE DRAWER (должен быть выше nav, поэтому добавляем его в конце списка children) ---
           if (isProfileOpen) ...[
-            // затемняющий фон
             Positioned.fill(
               child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
                 onTap: () => setState(() => isProfileOpen = false),
                 child: Container(color: Colors.black.withOpacity(0.4)),
               ),
             ),
-
-            // сама панель, слева, ширина = panelWidth
             Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
+              left: 0, top: 0, bottom: 0,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 280),
-                curve: Curves.easeInOut,
                 width: panelWidth,
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: const BorderRadius.only(topRight: Radius.circular(30), bottomRight: Radius.circular(30)),
+                ),
                 child: SafeArea(
-                  child: Container(
-                    color: cardColor,
-                    padding: const EdgeInsets.all(18),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // header: можно менять размеры здесь (fontSize)
                         Row(
                           children: [
+                            CircleAvatar(
+                              backgroundColor: purple.withOpacity(0.1),
+                              radius: 25,
+                              child: Icon(Icons.person, color: purple),
+                            ),
+                            const SizedBox(width: 15),
                             Expanded(
-                              child: Text(
-                                'Профиль', // можно заменить на fullName, если прокинуть
-                                style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(userName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  Text(userRole == 'specialist' ? "Специалист" : "Клиент",
+                                      style: TextStyle(color: purple, fontSize: 12, fontWeight: FontWeight.w600)),
+                                ],
                               ),
                             ),
-                            IconButton(
-                              icon: Icon(Icons.close, color: purple),
-                              onPressed: () => setState(() => isProfileOpen = false),
-                            ),
+                            IconButton(icon: Icon(Icons.close, color: purple), onPressed: () => setState(() => isProfileOpen = false)),
                           ],
                         ),
+                        const SizedBox(height: 30),
+                        _profileInfoItem(Icons.wc, "Пол", userGender),
+                        _profileInfoItem(Icons.cake_outlined, "Возраст", "$userAge лет"),
+                        _profileInfoItem(Icons.email_outlined, "Email", userEmail),
+                        const Divider(height: 40),
 
-                        const SizedBox(height: 8),
-                        Text('Пол: ---', style: TextStyle(color: Colors.black87)),
-                        Text('Возраст: ---', style: TextStyle(color: Colors.black87)),
-                        Text('Email: ---', style: TextStyle(color: Colors.black87)),
+                        if (userRole == 'specialist')
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.verified_user_outlined, color: Colors.green),
+                            title: const Text("Статус верификации"),
+                            onTap: () {},
+                          ),
+
                         const Spacer(),
-                        OutlinedButton(onPressed: () {}, child: const Text('Настройки')),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            await Supabase.instance.client.auth.signOut();
-
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(builder: (_) => AuthScreen()),
-                                  (route) => false,
-                            );
-                          },
-                          icon: const Icon(Icons.exit_to_app),
-                          label: const Text('Выйти'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: purple,
-                            foregroundColor: Colors.white,
+                        TextButton.icon(
+                          onPressed: () {},
+                          icon: const Icon(Icons.settings_outlined, color: Colors.grey),
+                          label: const Text("Настройки", style: TextStyle(color: Colors.grey)),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              await Supabase.instance.client.auth.signOut();
+                              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => AuthScreen()), (route) => false);
+                            },
+                            icon: const Icon(Icons.logout),
+                            label: const Text("Выйти"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: purple,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
                           ),
                         ),
                       ],
@@ -216,21 +227,34 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
     );
   }
+
+  Widget _profileInfoItem(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Colors.black54),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/// Навигационные кнопки (оставляем как есть)
 class _NavButton extends StatelessWidget {
   final IconData icon;
   final bool selected;
   final Color color;
   final VoidCallback onTap;
 
-  const _NavButton({
-    required this.icon,
-    required this.selected,
-    required this.color,
-    required this.onTap,
-  });
+  const _NavButton({required this.icon, required this.selected, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -238,21 +262,12 @@ class _NavButton extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? color.withOpacity(0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(30),
+          color: selected ? color.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 200),
-          scale: selected ? 1.2 : 1.0,
-          child: Icon(
-            icon,
-            color: selected ? color : Colors.grey,
-            size: 26,
-          ),
-        ),
+        child: Icon(icon, color: selected ? color : Colors.grey[400], size: 28),
       ),
     );
   }
