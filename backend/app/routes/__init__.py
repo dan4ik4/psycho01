@@ -8,6 +8,8 @@ from app.routes.users_admin import router as users_admin_router
 from app.routes.users_me import router as users_me_router
 from app.schemas.user import UserCreate, UserRead
 from app.routes.auth_preregistration import router as auth_preregister_router
+from app.routes.change_password import router as auth_password_router
+from app.routes.psychologists import router as psychologists_router
 
 api = APIRouter(prefix="/api/v1")
 
@@ -17,14 +19,26 @@ api.include_router(health_router)
 #preregister
 api.include_router(auth_preregister_router)
 
+#list of psychologists
+api.include_router(psychologists_router)
+
 # profile
 api.include_router(profile_router)
 api.include_router(psychologist_profile_router)
+
+#password
+api.include_router(auth_password_router, tags=["auth"])
 
 # auth (fastapi-users)
 api.include_router(
     fastapi_users.get_auth_router(auth_backend),
     prefix="/auth/jwt",
+    tags=["auth"],
+)
+
+api.include_router(
+    fastapi_users.get_reset_password_router(),
+    prefix="/auth",
     tags=["auth"],
 )
 # api.include_router(

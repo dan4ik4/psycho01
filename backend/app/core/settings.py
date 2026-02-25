@@ -16,6 +16,10 @@ class Settings(BaseSettings):
 
     REG_CODE_SECRET: str
     REG_CODE_TTL_MINUTES: int = 10
+    REG_CODE_MAX_ATTEMPTS: int = 5
+    REG_CODE_RESEND_COOLDOWN_SECONDS: int = 60
+
+    FRONTEND_URL: str = "http://localhost:3000"
 
 
     @property

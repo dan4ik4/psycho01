@@ -35,16 +35,38 @@ async def pre_register(payload: PreRegisterIn, db: AsyncSession = Depends(get_db
     pwd_hash = password_helper.hash(payload.password)
 
     # 4) перезаписываем pending (один email = одна заявка)
-    await db.execute(delete(PendingRegistration).where(PendingRegistration.email == payload.email))
-    db.add(
-        PendingRegistration(
-            email=payload.email,
-            password_hash=pwd_hash,
-            code_hash=code_h,
-            attempts=0,
-            expires_at=expires_at,
-        )
+    res_pending = await db.execute(
+        select(PendingRegistration).where(PendingRegistration.email == payload.email)
     )
+    pending = res_pending.scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+
+    if pending:
+        cooldown = int(settings.REG_CODE_RESEND_COOLDOWN_SECONDS)
+        if (now - pending.last_sent_at).total_seconds() < cooldown:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {cooldown} seconds before requesting a new code",
+            )
+
+        pending.password_hash = pwd_hash
+        pending.code_hash = code_h
+        pending.attempts = 0
+        pending.expires_at = expires_at
+        pending.last_sent_at = now
+    else:
+        db.add(
+            PendingRegistration(
+                email=payload.email,
+                password_hash=pwd_hash,
+                code_hash=code_h,
+                attempts=0,
+                expires_at=expires_at,
+                last_sent_at=now,
+            )
+        )
+
     await db.commit()
 
     # 5) отправляем код
@@ -60,7 +82,9 @@ async def pre_register(payload: PreRegisterIn, db: AsyncSession = Depends(get_db
 @router.post("/confirm", status_code=200)
 async def confirm(payload: ConfirmIn, db: AsyncSession = Depends(get_db)):
     res = await db.execute(
-        select(PendingRegistration).where(PendingRegistration.email == payload.email)
+    select(PendingRegistration)
+    .where(PendingRegistration.email == payload.email)
+    .with_for_update()
     )
     pending = res.scalar_one_or_none()
     if not pending:
@@ -72,7 +96,7 @@ async def confirm(payload: ConfirmIn, db: AsyncSession = Depends(get_db)):
         await db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Code expired")
 
-    if pending.attempts >= 5:
+    if pending.attempts >= int(settings.REG_CODE_MAX_ATTEMPTS):
         await db.delete(pending)
         await db.commit()
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts")
@@ -89,7 +113,7 @@ async def confirm(payload: ConfirmIn, db: AsyncSession = Depends(get_db)):
         hashed_password=pending.password_hash,
         is_active=True,
         is_superuser=False,
-        is_verified=False,  # можешь поставить True, если считаешь код=верификация
+        is_verified=True,  # можешь поставить True, если считаешь код=верификация
         role=UserRole.user,
     )
     db.add(user)

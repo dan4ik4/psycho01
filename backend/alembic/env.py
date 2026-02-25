@@ -10,6 +10,7 @@ import app.models.user
 import app.models.profile
 import app.models.psychologist_profile
 import app.models.pending_registration
+import app.models.patient_assignment
 from app.core.settings import settings
 
 config = context.config

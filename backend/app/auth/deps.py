@@ -9,10 +9,12 @@ from fastapi_users.jwt import SecretType
 from fastapi_users.manager import BaseUserManager, UUIDIDMixin
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
+from fastapi import HTTPException, status
 
 from app.core.settings import settings
 from app.db.deps import get_db
 from app.models.user import User
+from app.core.mailer import send_email
 
 
 # -------- user db --------
@@ -27,10 +29,38 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_register(self, user: User, request: Request | None = None):
         return
+    
+    async def on_after_forgot_password(
+        self, user: User, token: str, request: Request | None = None
+    ):
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+
+        await send_email(
+            to=user.email,
+            subject="Сброс пароля",
+            text=(
+                f"Чтобы сбросить пароль, перейдите по ссылке:\n\n"
+                f"{reset_link}\n\n"
+                "Если вы не запрашивали сброс — просто проигнорируйте письмо."
+            ),
+        )
+    
+    async def validate_password(
+        self,
+        password: str,
+        user: User | None = None,
+    ) -> None:
+        if len(password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Пароль должен содержать минимум 8 символов",
+            )
 
 
 async def get_user_manager(user_db=Depends(get_user_db)):
     yield UserManager(user_db)
+
+
 
 
 # -------- auth backend --------
