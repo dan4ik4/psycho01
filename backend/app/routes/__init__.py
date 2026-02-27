@@ -10,6 +10,7 @@ from app.schemas.user import UserCreate, UserRead
 from app.routes.auth_preregistration import router as auth_preregister_router
 from app.routes.change_password import router as auth_password_router
 from app.routes.psychologists import router as psychologists_router
+from app.routes.patient_assignment import router as patient_assignment_router
 
 api = APIRouter(prefix="/api/v1")
 
@@ -18,6 +19,9 @@ api.include_router(health_router)
 
 #preregister
 api.include_router(auth_preregister_router)
+
+#relation patient-psychologist
+api.include_router(patient_assignment_router)
 
 #list of psychologists
 api.include_router(psychologists_router)

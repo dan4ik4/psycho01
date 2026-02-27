@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from sqlalchemy import ForeignKey, DateTime, Enum
+from sqlalchemy import ForeignKey, DateTime, Enum, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from app.db.base import Base  # если у тебя Base лежит в другом месте — поправь импорт

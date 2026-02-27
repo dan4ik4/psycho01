@@ -40,6 +40,6 @@ async def change_password(
     # 3) set new password hash
     user.hashed_password = user_manager.password_helper.hash(payload.new_password)
 
-    await user_manager.user_db.update(user)
+    await user_manager.user_db.update(user, {"hashed_password": user.hashed_password})
 
     return None
