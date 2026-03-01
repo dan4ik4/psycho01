@@ -13,6 +13,7 @@ import 'plan_screen.dart';
 import 'analytics_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'call_screen.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -566,6 +567,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 8),
 
                     // Calendar container
@@ -628,6 +630,43 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+                    if (true) // Пока ставим true для теста, потом заменим на проверку из базы
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const CallScreen(channelName: "test_room")),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: [purple, purple.withOpacity(0.7)]),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [BoxShadow(color: purple.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))]
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.videocam, color: Colors.white, size: 30),
+                                const SizedBox(width: 15),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text("Сессия с психологом", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                      Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+// =======================================
                     const SizedBox(height: 12),
 
                     // Breathing card
@@ -652,9 +691,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               Icon(Icons.play_circle_fill, color: purple, size: 40),
                             ],
                           ),
+
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 80),
                   ],
                 ),

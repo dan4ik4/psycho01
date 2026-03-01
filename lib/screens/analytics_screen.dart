@@ -90,47 +90,41 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             const Expanded(child: Center(child: Text("За этот период данных пока нет")))
           else
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    // Увеличенный контейнер диаграммы
-                    Container(
-                      height: 350, // Увеличили высоту с 250 до 350
-                      padding: const EdgeInsets.fromLTRB(10, 30, 10, 20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                              color: purple.withOpacity(0.08),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5)
-                          )
-                        ],
+              child: SingleChildScrollView( // <-- Добавили скролл для маленьких экранов
+                physics: const BouncingScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 320, // Чуть уменьшили высоту белой карточки
+                        padding: const EdgeInsets.fromLTRB(10, 20, 10, 20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(color: purple.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
+                          ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(child: _buildBar("Ужасно", "😫", stats['terrible']!, total, Colors.redAccent)),
+                            Expanded(child: _buildBar("Плохо", "😔", stats['bad']!, total, Colors.orange)),
+                            Expanded(child: _buildBar("Норм", "😐", stats['neutral']!, total, Colors.amber)),
+                            Expanded(child: _buildBar("Хор", "🙂", stats['good']!, total, Colors.lightGreen)),
+                            Expanded(child: _buildBar("Отл", "😊", stats['excellent']!, total, Colors.green)),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _buildBar("Ужасно", "😫", stats['terrible']!, total, Colors.redAccent),
-                          _buildBar("Плохо", "😔", stats['bad']!, total, Colors.orange),
-                          _buildBar("Норм", "😐", stats['neutral']!, total, Colors.amber),
-                          _buildBar("Хор", "🙂", stats['good']!, total, Colors.lightGreen),
-                          _buildBar("Отл", "😊", stats['excellent']!, total, Colors.green),
-                        ],
+                      const SizedBox(height: 30),
+                      Text(
+                          "Всего записей: $total",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: purple.withOpacity(0.8))
                       ),
-                    ),
-                    const SizedBox(height: 30),
-                    Text(
-                        "Всего записей: $total",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: purple.withOpacity(0.8)
-                        )
-                    ),
-                  ],
+                      const SizedBox(height: 20), // Отступ снизу
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -195,52 +189,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget _buildBar(String label, String emoji, int count, int total, Color color) {
     double percent = total == 0 ? 0 : count / total;
 
-    // Вычисляем динамическую высоту (макс 220 пикселей)
-    double barHeight = (percent * 220).clamp(8.0, 220.0);
+    // Уменьшили максимальную высоту до 160, чтобы всё гарантированно влезало
+    double barHeight = (percent * 160).clamp(8.0, 160.0);
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        // Процент над столбиком
         Text(
           "${(percent * 100).toStringAsFixed(0)}%",
-          style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: color
-          ),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color),
         ),
         const SizedBox(height: 6),
-        // Столбик (сделали шире — 45)
         AnimatedContainer(
           duration: const Duration(milliseconds: 600),
           curve: Curves.easeOutBack,
-          width: 45,
+          width: 40, // Чуть сузили, чтобы 5 штук легко помещались в ряд
           height: barHeight,
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.3),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              )
-            ],
+            boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))],
           ),
-          // Внутри столбика можно вывести количество дней, если оно там поместится
           child: count > 0 && barHeight > 30
-              ? Center(
-              child: Text(
-                  "$count",
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)
-              )
-          )
+              ? Center(child: Text("$count", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)))
               : null,
         ),
         const SizedBox(height: 12),
-        // Только эмодзи (размер увеличили до 32)
-        Text(emoji, style: const TextStyle(fontSize: 32)),
+        Text(emoji, style: const TextStyle(fontSize: 28)),
       ],
     );
   }
