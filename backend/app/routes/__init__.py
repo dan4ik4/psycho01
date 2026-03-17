@@ -11,11 +11,19 @@ from app.routes.auth_preregistration import router as auth_preregister_router
 from app.routes.change_password import router as auth_password_router
 from app.routes.psychologists import router as psychologists_router
 from app.routes.patient_assignment import router as patient_assignment_router
+from app.routes.psychologist_slots import router as psychologist_slots_router
+from app.routes.appointments import router as appointments_router
 
 api = APIRouter(prefix="/api/v1")
 
 # health
 api.include_router(health_router)
+
+#slots
+api.include_router(psychologist_slots_router)
+
+#slots(patient)
+api.include_router(appointments_router)
 
 #preregister
 api.include_router(auth_preregister_router)

@@ -55,3 +55,21 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+
+    availability_slots = relationship(
+        "AvailabilitySlot",
+        back_populates="psychologist",
+        cascade="all, delete-orphan",
+    )
+
+    psychologist_appointments = relationship(
+        "Appointment",
+        foreign_keys="Appointment.psychologist_id",
+        back_populates="psychologist",
+    )
+
+    patient_appointments = relationship(
+        "Appointment",
+        foreign_keys="Appointment.patient_id",
+        back_populates="patient",
+    )
