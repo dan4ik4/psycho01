@@ -7,14 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'breathing_screen.dart';
-import 'SpecialistSelectionScreen.dart';
+// SpecialistSelectionScreen удален из импортов, так как больше не используется здесь
 import 'chat_screen.dart';
 import 'plan_screen.dart';
 import 'analytics_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'call_screen.dart';
-
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onOpenProfile;
@@ -37,8 +36,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   String? selectedImagePath;
 
-
-  // ИЗМЕНЕНО: Порядок от Ужасного (слева) до Отличного (справа)
   final Map<String, dynamic> moodData = {
     'terrible': {'emoji': '😫', 'color': Colors.redAccent, 'label': 'Ужасно'},
     'bad': {'emoji': '😔', 'color': Colors.orange, 'label': 'Плохо'},
@@ -98,7 +95,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final keys = prefs.getKeys();
     final Map<String, Map<String, dynamic>> tmp = {};
     for (final k in keys) {
-      // Загружаем заметки
       if (k.startsWith('notes_')) {
         final dateKey = k.substring(6);
         tmp.putIfAbsent(dateKey, () => {'items': []});
@@ -109,7 +105,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           }
         } catch (_) {}
       }
-      // Загружаем независимое настроение дня
       else if (k.startsWith('mood_')) {
         final dateKey = k.substring(5);
         tmp.putIfAbsent(dateKey, () => {'items': []});
@@ -119,7 +114,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() => notesByDate = tmp);
   }
 
-  // НОВОЕ: Моментальное сохранение настроения для дня
   Future<void> _saveDayMood(DateTime day, String mood) async {
     final dateKey = _dateKey(day);
     final prefs = await _prefs();
@@ -220,7 +214,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  // НОВОЕ: Просмотр фото на весь экран
   void _showFullScreenImage(String path) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
       backgroundColor: Colors.black,
@@ -243,9 +236,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _openDaySheet(DateTime day) {
     final dateKey = _dateKey(day);
     final existing = notesByDate[dateKey];
-
     String? dayMood = existing?['dayMood'];
-
     final List<Map<String, dynamic>> items = List<Map<String, dynamic>>.from(
         existing != null && existing['items'] != null ? existing['items'] as List : []);
 
@@ -253,8 +244,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     String? editingId;
     bool confirmShown = false;
     String? newlyAddedId;
-
-
 
     showModalBottomSheet(
       context: context,
@@ -264,7 +253,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       enableDrag: false,
       builder: (ctx) {
         return StatefulBuilder(builder: (context, setModalState) {
-
           return WillPopScope(
             onWillPop: () async {
               if (!confirmShown && newController.text.trim().isNotEmpty && editingId == null) {
@@ -312,21 +300,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ),
                             IconButton(
                               icon: Icon(Icons.close, color: purple),
-                              onPressed: () async {
-                                if (!confirmShown && newController.text.trim().isNotEmpty && editingId == null) {
-                                  // Код проверки на закрытие
-                                  // ... (оставил как было)
-                                  Navigator.of(ctx).pop();
-                                } else {
-                                  Navigator.of(ctx).pop();
-                                }
-                              },
+                              onPressed: () => Navigator.of(ctx).pop(),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
-
-                        // ИЗМЕНЕНО: Смайлики теперь сохраняют Настроение Дня моментально
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: moodData.entries.map((e) {
@@ -334,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             return GestureDetector(
                               onTap: () {
                                 setModalState(() => dayMood = e.key);
-                                _saveDayMood(day, e.key); // Сразу сохраняем
+                                _saveDayMood(day, e.key);
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
@@ -350,7 +328,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           }).toList(),
                         ),
                         const SizedBox(height: 12),
-
                         if (selectedImagePath != null)
                           Stack(
                             alignment: Alignment.topRight,
@@ -366,7 +343,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ],
                           ),
                         const SizedBox(height: 8),
-
                         TextField(
                           controller: newController,
                           maxLines: 3,
@@ -380,7 +356,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ),
                         const SizedBox(height: 8),
-
                         Row(
                           children: [
                             ElevatedButton.icon(
@@ -390,7 +365,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               onPressed: () async {
                                 final txt = newController.text.trim();
                                 if (txt.isEmpty && selectedImagePath == null) return;
-
                                 if (editingId == null) {
                                   final id = await _addNoteForDay(day, txt, selectedImagePath);
                                   items.insert(0, {"id": id, "text": txt, "imagePath": selectedImagePath, "createdAt": DateTime.now().toIso8601String()});
@@ -405,15 +379,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   }
                                   editingId = null;
                                 }
-
                                 if (notesByDate[dateKey] == null) notesByDate[dateKey] = {'items': []};
                                 notesByDate[dateKey]!['items'] = List<Map<String, dynamic>>.from(items);
-
                                 newController.clear();
                                 selectedImagePath = null;
                                 if (context.mounted) setModalState(() {});
                                 if (mounted) setState(() {});
-
                                 Future.delayed(const Duration(milliseconds: 700), () {
                                   if (context.mounted) setModalState(() => newlyAddedId = null);
                                 });
@@ -427,7 +398,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                         const SizedBox(height: 12),
-
                         if (items.isEmpty)
                           Text('Заметок пока нет.', style: TextStyle(color: isDarkTheme ? Colors.white70 : Colors.black54))
                         else
@@ -550,7 +520,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     const SizedBox(height: 10),
 
-                    // Greeting card (Без кнопки аналитики, она теперь в шапке)
+                    // Greeting card
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       child: Container(
@@ -630,43 +600,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    if (true) // Пока ставим true для теста, потом заменим на проверку из базы
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const CallScreen(channelName: "test_room")),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [purple, purple.withOpacity(0.7)]),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [BoxShadow(color: purple.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))]
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.videocam, color: Colors.white, size: 30),
-                                const SizedBox(width: 15),
-                                const Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Сессия с психологом", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                                      Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    ],
-                                  ),
+
+                    // Session card (Войти в комнату)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const CallScreen(channelName: "test_room")),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: [purple, purple.withOpacity(0.7)]),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [BoxShadow(color: purple.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))]
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.videocam, color: Colors.white, size: 30),
+                              const SizedBox(width: 15),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Сессия с психологом", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                  ],
                                 ),
-                                const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
-                              ],
-                            ),
+                              ),
+                              const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                            ],
                           ),
                         ),
                       ),
-// =======================================
+                    ),
+
                     const SizedBox(height: 12),
 
                     // Breathing card
@@ -691,7 +662,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               Icon(Icons.play_circle_fill, color: purple, size: 40),
                             ],
                           ),
-
                         ),
                       ),
                     ),
@@ -703,7 +673,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          // ИЗМЕНЕНО: Кнопка Аналитики добавлена справа, симметрично профилю
+          // Header Bar
           Positioned(
             top: 0, left: 0, right: 0,
             child: Container(
@@ -732,12 +702,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ИЗМЕНЕНО: Отображение чисел с нулём и цвет от независимого Настроения Дня
   Widget _buildCalendarGrid({required Key key, required List<DateTime> gridDates, required double calendarHeight, required Color textColor, required DateTime now}) {
     final int totalCells = gridDates.length;
     final int rows = (totalCells / 7).ceil();
-    final bool sixRows = rows >= 6;
     final double cellHeight = calendarHeight / rows;
+    final bool sixRows = rows >= 6;
     final double fontSize = sixRows ? 12.0 : 14.0;
     final double margin = sixRows ? 3.0 : 4.0;
 
@@ -762,11 +731,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
             if (note != null) {
               String? mood = note['dayMood'];
-              // Если настроения дня нет, но есть старые заметки с настроением (для совместимости)
               if (mood == null && note['items'] != null && (note['items'] as List).isNotEmpty) {
                 mood = (note['items'] as List).first['mood'];
               }
-
               if (mood != null && moodData.containsKey(mood)) {
                 bg = moodData[mood]['color'].withOpacity(0.4);
                 emoji = moodData[mood]['emoji'] ?? '';
@@ -785,7 +752,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
                 child: Stack(
                   children: [
-                    // ДОБАВЛЕНО: .padLeft(2, '0')
                     Center(child: Text(d.day.toString().padLeft(2, '0'), style: TextStyle(fontSize: fontSize, color: isOtherMonth ? Colors.grey : textColor, fontWeight: isToday ? FontWeight.bold : FontWeight.normal))),
                     if (isToday) Positioned(bottom: 4, left: 0, right: 0, child: Center(child: Container(width: 4, height: 4, decoration: BoxDecoration(shape: BoxShape.circle, color: purple)))),
                     if (emoji.isNotEmpty) Positioned(top: 2, right: 2, child: Text(emoji, style: const TextStyle(fontSize: 9))),
@@ -803,6 +769,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     const names = ['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
     return names[m];
   }
+
   Future<void> pickImage(StateSetter setModalState) async {
     showModalBottomSheet(
         context: context,

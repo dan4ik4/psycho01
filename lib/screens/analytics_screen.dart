@@ -1,5 +1,5 @@
-// lib/screens/analytics_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -11,54 +11,61 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  String selectedPeriod = 'week';
-  final Color purple = const Color(0xFF5E3B8C);
+  String selectedType = 'week';
+  final _startController = TextEditingController();
+  final _endController = TextEditingController();
 
-  // Календарный алгоритм определения начала периода
-  DateTime _getPeriodStart() {
+  final Color deepPurple = const Color(0xFF2D1B4E);
+  final Color accentPurple = const Color(0xFF9575CD);
+  final Color warmWhite = const Color(0xFFFFF9F2);
+
+  @override
+  void initState() {
+    super.initState();
+    _applyQuickPeriod('week');
+  }
+
+  void _applyQuickPeriod(String type) {
     DateTime now = DateTime.now();
-    DateTime today = DateTime(now.year, now.month, now.day);
-
-    if (selectedPeriod == 'week') {
-      // Ищем текущий понедельник
-      return today.subtract(Duration(days: today.weekday - 1));
-    } else if (selectedPeriod == 'month') {
-      // 1-е число текущего месяца
-      return DateTime(today.year, today.month, 1);
+    DateTime start;
+    if (type == 'week') {
+      start = now.subtract(Duration(days: now.weekday - 1));
+    } else if (type == 'month') {
+      start = DateTime(now.year, now.month, 1);
     } else {
-      // 1-е января
-      return DateTime(today.year, 1, 1);
+      start = DateTime(now.year, 1, 1);
+    }
+
+    setState(() {
+      selectedType = type;
+      _startController.text = DateFormat('dd.MM.yy').format(start);
+      _endController.text = DateFormat('dd.MM.yy').format(now);
+    });
+  }
+
+  DateTime? _safeParse(String input) {
+    if (input.length != 8) return null;
+    try {
+      return DateFormat('dd.MM.yy').parseStrict(input);
+    } catch (_) {
+      return null;
     }
   }
 
-  Map<String, int> _calculateMoodStats() {
+  Map<String, int> _calculateStats() {
     Map<String, int> stats = {'excellent': 0, 'good': 0, 'neutral': 0, 'bad': 0, 'terrible': 0};
-    DateTime now = DateTime.now();
-    DateTime today = DateTime(now.year, now.month, now.day);
-    DateTime threshold;
+    final start = _safeParse(_startController.text);
+    final end = _safeParse(_endController.text);
 
-    if (selectedPeriod == 'week') {
-      // Начало текущей недели (Понедельник)
-      threshold = today.subtract(Duration(days: today.weekday - 1));
-    } else if (selectedPeriod == 'month') {
-      // 1-е число текущего месяца
-      threshold = DateTime(today.year, today.month, 1);
-    } else {
-      // 1-е января
-      threshold = DateTime(today.year, 1, 1);
-    }
+    if (start == null || end == null) return stats;
 
-    widget.notesData.forEach((dateKey, value) {
+    final endLimit = DateTime(end.year, end.month, end.day, 23, 59, 59);
+    widget.notesData.forEach((key, val) {
       try {
-        DateTime date = DateTime.parse(dateKey);
-        if (!date.isBefore(threshold)) {
-          String? mood = value['dayMood'];
-          if (mood == null && value['items'] != null && (value['items'] as List).isNotEmpty) {
-            mood = (value['items'] as List).first['mood'];
-          }
-          if (mood != null && stats.containsKey(mood)) {
-            stats[mood] = stats[mood]! + 1;
-          }
+        DateTime d = DateTime.parse(key);
+        if (!d.isBefore(start) && !d.isAfter(endLimit)) {
+          String? mood = val['dayMood'] ?? (val['items']?.isNotEmpty == true ? val['items'][0]['mood'] : null);
+          if (mood != null && stats.containsKey(mood)) stats[mood] = stats[mood]! + 1;
         }
       } catch (_) {}
     });
@@ -67,156 +74,222 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final stats = _calculateMoodStats();
-    final total = stats.values.fold(0, (sum, item) => sum + item);
-    final start = _getPeriodStart();
+    final stats = _calculateStats();
+    final total = stats.values.fold(0, (a, b) => a + b);
+    final h = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F6FF),
-      appBar: AppBar(
-        title: const Text("Аналитика настроения", style: TextStyle(fontWeight: FontWeight.bold)),
-        centerTitle: true, backgroundColor: Colors.transparent, elevation: 0, foregroundColor: purple,
-      ),
-      body: Column(
-        children: [
-          Text(
-            "Период: ${DateFormat('dd.MM.yy').format(start)} — ${DateFormat('dd.MM.yy').format(DateTime.now())}",
-            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+      backgroundColor: deepPurple,
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+            colors: [deepPurple, warmWhite], stops: const [0.6, 1.0],
           ),
-          const SizedBox(height: 15),
-          _buildSelector(),
-          const SizedBox(height: 25),
-          if (total == 0)
-            const Expanded(child: Center(child: Text("За этот период данных пока нет")))
-          else
-            Expanded(
-              child: SingleChildScrollView( // <-- Добавили скролл для маленьких экранов
-                physics: const BouncingScrollPhysics(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(),
+              const SizedBox(height: 15),
+              _buildPeriodSelector(),
+
+              // Анимированное появление полей ввода
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                child: selectedType == 'custom'
+                    ? _buildManualInputBlock()
+                    : const SizedBox(height: 10),
+              ),
+
+              if (total == 0)
+                Expanded(child: Center(child: Text(
+                  _safeParse(_startController.text) == null ? "Введите дату полностью (дд.мм.гг)" : "Данных не найдено",
+                  style: TextStyle(color: warmWhite.withOpacity(0.4)),
+                )))
+              else
+                Expanded(
                   child: Column(
                     children: [
+                      const SizedBox(height: 20),
+                      // ГРАФИК (50% ВЫСОТЫ ЭКРАНА)
                       Container(
-                        height: 320, // Чуть уменьшили высоту белой карточки
-                        padding: const EdgeInsets.fromLTRB(10, 20, 10, 20),
+                        height: h * 0.5,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(color: purple.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
-                          ],
+                          color: Colors.white.withOpacity(0.07),
+                          borderRadius: BorderRadius.circular(35),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Expanded(child: _buildBar("Ужасно", "😫", stats['terrible']!, total, Colors.redAccent)),
-                            Expanded(child: _buildBar("Плохо", "😔", stats['bad']!, total, Colors.orange)),
-                            Expanded(child: _buildBar("Норм", "😐", stats['neutral']!, total, Colors.amber)),
-                            Expanded(child: _buildBar("Хор", "🙂", stats['good']!, total, Colors.lightGreen)),
-                            Expanded(child: _buildBar("Отл", "😊", stats['excellent']!, total, Colors.green)),
+                            _bar("😫", stats['terrible']!, total, Colors.redAccent),
+                            _bar("😔", stats['bad']!, total, Colors.orangeAccent),
+                            _bar("😐", stats['neutral']!, total, Colors.amberAccent),
+                            _bar("🙂", stats['good']!, total, Colors.lightGreenAccent),
+                            _bar("😊", stats['excellent']!, total, Colors.greenAccent),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 30),
-                      Text(
-                          "Всего записей: $total",
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: purple.withOpacity(0.8))
-                      ),
-                      const SizedBox(height: 20), // Отступ снизу
+                      const Spacer(),
+                      _buildTotalBadge(total),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildSelector() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
-          Expanded(child: _btn("Неделя", 'week')),
-          Expanded(child: _btn("Месяц", 'month')),
-          Expanded(child: _btn("Год", 'year')),
+          IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white), onPressed: () => Navigator.pop(context)),
+          const Expanded(child: Center(child: Text("Аналитика настроения", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)))),
+          const SizedBox(width: 48),
         ],
       ),
     );
   }
 
-  Widget _btn(String txt, String code) {
-    bool isSel = selectedPeriod == code;
-    return GestureDetector(
-      onTap: () => setState(() => selectedPeriod = code),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(color: isSel ? purple : Colors.transparent, borderRadius: BorderRadius.circular(25)),
-        child: Center(child: Text(txt, style: TextStyle(color: isSel ? Colors.white : Colors.grey, fontWeight: isSel ? FontWeight.bold : FontWeight.normal))),
-      ),
-    );
-  }
-
-  Widget _statCard(String label, String emoji, int count, int total, Color color) {
-    double percent = total == 0 ? 0 : count / total;
+  Widget _buildPeriodSelector() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15),
-          boxShadow: [BoxShadow(color: color.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))]),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      height: 50,
+      decoration: BoxDecoration(color: Colors.black.withOpacity(0.2), borderRadius: BorderRadius.circular(15)),
+      child: Row(
+        children: ['week', 'month', 'year', 'custom'].map((t) {
+          String label = t == 'week' ? "Неделя" : t == 'month' ? "Месяц" : t == 'year' ? "Год" : "Свой";
+          bool isSel = selectedType == t;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => t == 'custom' ? setState(() => selectedType = 'custom') : _applyQuickPeriod(t),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: isSel ? accentPurple : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(label, style: TextStyle(color: isSel ? Colors.white : Colors.white54, fontSize: 13, fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildManualInputBlock() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(25, 15, 25, 5),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: accentPurple.withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            _dateEntry(_startController, "ОТ"),
+            Container(margin: const EdgeInsets.symmetric(horizontal: 15), width: 1, height: 30, color: Colors.white10),
+            _dateEntry(_endController, "ДО"),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dateEntry(TextEditingController ctrl, String label) {
+    return Expanded(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Text("$emoji $label", style: const TextStyle(fontWeight: FontWeight.bold)),
-            const Spacer(),
-            Text("$count дн.", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            const SizedBox(width: 8),
-            Text("${(percent * 100).toStringAsFixed(0)}%", style: TextStyle(fontWeight: FontWeight.bold, color: color)),
-          ]),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(value: percent, minHeight: 8, color: color, backgroundColor: Colors.grey[100]),
+          Text(label, style: TextStyle(color: accentPurple, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+          TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: [DateMaskFormatter()],
+            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+            decoration: const InputDecoration(hintText: "00.00.00", hintStyle: TextStyle(color: Colors.white12), border: InputBorder.none, isDense: true),
+            onChanged: (_) => setState(() {}),
           ),
         ],
       ),
     );
   }
-  Widget _buildBar(String label, String emoji, int count, int total, Color color) {
-    double percent = total == 0 ? 0 : count / total;
 
-    // Уменьшили максимальную высоту до 160, чтобы всё гарантированно влезало
-    double barHeight = (percent * 160).clamp(8.0, 160.0);
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Text(
-          "${(percent * 100).toStringAsFixed(0)}%",
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color),
-        ),
-        const SizedBox(height: 6),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.easeOutBack,
-          width: 40, // Чуть сузили, чтобы 5 штук легко помещались в ряд
-          height: barHeight,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))],
+  Widget _bar(String emoji, int count, int total, Color color) {
+    double percent = count / total;
+    double h = (percent * 250).clamp(15.0, 250.0); // Высота столбика
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text("${(percent * 100).toInt()}%", style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOutBack,
+            width: 38, height: h,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [color, color.withOpacity(0.4)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: color.withOpacity(0.2), blurRadius: 10, spreadRadius: 1)],
+            ),
+            child: count > 0 && h > 40 ? Center(child: Text("$count", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))) : null,
           ),
-          child: count > 0 && barHeight > 30
-              ? Center(child: Text("$count", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)))
-              : null,
-        ),
-        const SizedBox(height: 12),
-        Text(emoji, style: const TextStyle(fontSize: 28)),
-      ],
+          const SizedBox(height: 12),
+          Text(emoji, style: const TextStyle(fontSize: 32)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalBadge(int total) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 40),
+      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 25),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04), // Почти прозрачная
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text("Всего записей:", style: TextStyle(color: deepPurple.withOpacity(0.4), fontSize: 15, fontWeight: FontWeight.w500)),
+          Text("$total", style: TextStyle(color: deepPurple, fontSize: 22, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+}
+
+class DateMaskFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = newValue.text.replaceAll('.', '');
+    if (text.length > 6) return oldValue;
+
+    var buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      buffer.write(text[i]);
+      if ((i == 1 || i == 3) && i != text.length - 1) buffer.write('.');
+    }
+
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.toString().length),
     );
   }
 }
