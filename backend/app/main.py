@@ -3,6 +3,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 
 from app.routes import api
+from app.jobs.scheduler import start_scheduler, stop_scheduler
 
 app = FastAPI(
     title="TheraAI",
@@ -26,3 +27,12 @@ async def _log_exceptions(request: Request, call_next):
         raise
 
 app.add_middleware(BaseHTTPMiddleware, dispatch=_log_exceptions)
+
+@app.on_event("startup")
+async def startup_event():
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    stop_scheduler()

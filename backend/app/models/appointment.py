@@ -9,11 +9,23 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
+class MissedBy(str, enum.Enum):
+    patient = "patient"
+    psychologist = "psychologist"
+    both = "both"
+    unknown = "unknown"
+
 class AppointmentStatus(str, enum.Enum):
     scheduled = "scheduled"
     cancelled = "cancelled"
     completed = "completed"
     missed = "missed"
+    in_progress = "in_progress"
+    missed_by: Mapped[MissedBy | None] = mapped_column(
+    Enum(MissedBy, name="missedby"),
+    nullable=True
+)
+
 
 
 class AvailabilitySlot(Base):
@@ -60,6 +72,29 @@ class Appointment(Base):
         default=AppointmentStatus.scheduled,
         nullable=False,
     )
+
+    missed_by: Mapped[MissedBy | None] = mapped_column(
+        Enum(MissedBy, name="missedby"),
+        nullable=True,
+    )
+
+    patient_joined_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    patient_left_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    psychologist_joined_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    psychologist_left_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     slot = relationship("AvailabilitySlot", back_populates="appointment")

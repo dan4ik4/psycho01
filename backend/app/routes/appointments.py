@@ -8,10 +8,10 @@ from app.auth.deps import current_active_user
 from app.crud.slot import get_available_slots_for_patient
 from app.db.deps import get_db
 from app.models.user import User, UserRole
-from app.schemas.appointment import AvailableSlotOut, AppointmentBookIn, AppointmentOut, PatientAppointmentOut, PsychologistAppointmentOut
+from app.schemas.appointment import AvailableSlotOut, AppointmentBookIn, AppointmentOut
 from app.models.patient_assignment import PatientAssignment, AssignmentStatus
-from app.crud.appointment import book_slot, get_slot_for_booking, get_patient_appointments, cancel_appointment, get_appointment_by_id, get_psychologist_appointments
-
+from app.crud.appointment import book_slot, get_slot_for_booking, cancel_appointment, get_appointment_by_id
+from app.crud.appointment import get_user_appointments_history, get_user_appointments
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
 
@@ -112,30 +112,24 @@ async def book_appointment(
     )
     return appointment
 
-@router.get("/my", response_model=list[PatientAppointmentOut])
+@router.get("/my", response_model=list[AppointmentOut])
 async def get_my_appointments(
     session: AsyncSession = Depends(get_db),
     current_user: User = Depends(current_active_user),
 ):
-    if current_user.role != UserRole.user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only patients can view their appointments.",
-        )
 
-    appointments = await get_patient_appointments(
-        session=session,
-        patient_id=current_user.id,
-    )
+    appointments = await get_user_appointments(session, current_user)
 
     result = []
     for appt in appointments:
         result.append(
-            PatientAppointmentOut(
+            AppointmentOut(
                 id=appt.id,
                 slot_id=appt.slot_id,
                 psychologist_id=appt.psychologist_id,
+                patient_id=appt.patient_id,
                 status=appt.status,
+                missed_by=appt.missed_by,
                 start_at=appt.slot.start_at,
                 end_at=appt.slot.end_at,
             )
@@ -171,30 +165,24 @@ async def delete_appointment(
         appointment=appointment,
     )
 
-@router.get("/appointments", response_model=list[PsychologistAppointmentOut])
-async def get_my_appointments_as_psychologist(
-    session: AsyncSession = Depends(get_db),
-    current_user: User = Depends(current_active_user),
-) -> list[PsychologistAppointmentOut]:
-    if current_user.role != UserRole.psychologist:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only psychologists can view their appointments.",
-        )
 
-    appointments = await get_psychologist_appointments(
-        session=session,
-        psychologist_id=current_user.id,
-    )
+@router.get("/history", response_model=list[AppointmentOut])
+async def get_my_appointments_history(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    appointments = await get_user_appointments_history(session, user)
 
     result = []
     for appt in appointments:
         result.append(
-            PsychologistAppointmentOut(
+            AppointmentOut(
                 id=appt.id,
                 slot_id=appt.slot_id,
+                psychologist_id=appt.psychologist_id,
                 patient_id=appt.patient_id,
                 status=appt.status,
+                missed_by=appt.missed_by,
                 start_at=appt.slot.start_at,
                 end_at=appt.slot.end_at,
             )

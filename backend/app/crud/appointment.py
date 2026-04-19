@@ -3,6 +3,8 @@ import uuid
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from datetime import datetime, UTC
+from app.models.user import UserRole
 
 from app.models.appointment import Appointment, AppointmentStatus, AvailabilitySlot
 
@@ -37,20 +39,6 @@ async def get_slot_for_booking(
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
-async def get_patient_appointments(
-    session: AsyncSession,
-    patient_id: uuid.UUID,
-) -> list[Appointment]:
-    stmt: Select[tuple[Appointment]] = (
-        select(Appointment)
-        .options(selectinload(Appointment.slot))
-        .where(Appointment.patient_id == patient_id)
-        .order_by(Appointment.created_at.desc())
-    )
-
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
-
 async def cancel_appointment(
     session: AsyncSession,
     appointment: Appointment,
@@ -74,16 +62,48 @@ async def get_appointment_by_id(
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
-async def get_psychologist_appointments(
-    session: AsyncSession,
-    psychologist_id: uuid.UUID,
-) -> list[Appointment]:
-    stmt: Select[tuple[Appointment]] = (
+
+async def get_user_appointments_history(session: AsyncSession, user) -> list[Appointment]:
+    now = datetime.now(UTC)
+
+    stmt = (
         select(Appointment)
         .options(selectinload(Appointment.slot))
-        .where(Appointment.psychologist_id == psychologist_id)
-        .order_by(Appointment.created_at.desc())
+        .join(AvailabilitySlot, Appointment.slot_id == AvailabilitySlot.id)
+        .where(AvailabilitySlot.end_at < now)
     )
+
+    if user.role == UserRole.user:
+        stmt = stmt.where(Appointment.patient_id == user.id)
+    elif user.role == UserRole.psychologist:
+        stmt = stmt.where(Appointment.psychologist_id == user.id)
+    else:
+        return []
+
+    stmt = stmt.order_by(AvailabilitySlot.start_at.desc())
+
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_user_appointments(session: AsyncSession, user) -> list[Appointment]:
+    now = datetime.now(UTC)
+
+    stmt = (
+        select(Appointment)
+        .options(selectinload(Appointment.slot))
+        .join(AvailabilitySlot, Appointment.slot_id == AvailabilitySlot.id)
+        .where(AvailabilitySlot.start_at > now)
+    )
+
+    if user.role == UserRole.user:
+        stmt = stmt.where(Appointment.patient_id == user.id)
+    elif user.role == UserRole.psychologist:
+        stmt = stmt.where(Appointment.psychologist_id == user.id)
+    else:
+        return []
+
+    stmt = stmt.order_by(AvailabilitySlot.start_at.desc())
 
     result = await session.execute(stmt)
     return list(result.scalars().all())

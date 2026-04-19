@@ -13,6 +13,7 @@ from app.routes.psychologists import router as psychologists_router
 from app.routes.patient_assignment import router as patient_assignment_router
 from app.routes.psychologist_slots import router as psychologist_slots_router
 from app.routes.appointments import router as appointments_router
+from app.routes.appointments_agora import router as appointments_agora_router
 
 api = APIRouter(prefix="/api/v1")
 
@@ -24,6 +25,9 @@ api.include_router(psychologist_slots_router)
 
 #slots(patient)
 api.include_router(appointments_router)
+
+#agora
+api.include_router(appointments_agora_router)
 
 #preregister
 api.include_router(auth_preregister_router)
