@@ -20,7 +20,11 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
   final Color purple = const Color(0xFF5E3B8C);
-  final Color cardColor = const Color(0xFFF6F6FF);
+  final Color cardColor = const Color(0xFF2D1B4E);
+
+  // Цвета для градиентов
+  final Color deepPurple = const Color(0xFF2D1B4E);
+  final Color warmWhite = const Color(0xFFFFF9F2);
 
   bool isProfileOpen = false;
 
@@ -88,11 +92,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ];
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 450),
+            duration: const Duration(milliseconds: 350),
             switchInCurve: Curves.fastOutSlowIn,
             switchOutCurve: Curves.fastOutSlowIn,
             transitionBuilder: (Widget child, Animation<double> animation) {
@@ -116,7 +120,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               height: bottomBgHeight + bottomInset,
               padding: EdgeInsets.only(bottom: bottomInset),
               decoration: BoxDecoration(
-                color: cardColor,
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFEBE8E4), // Верхний цвет (темно-фиолетовый)
+                    Color(0xFFFFFFFF), // Нижний цвет (светло-фиолетовый)
+                  ],
+                ),
                 boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, -2))],
               ),
               child: Row(
@@ -148,7 +159,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 duration: const Duration(milliseconds: 280),
                 width: panelWidth,
                 decoration: BoxDecoration(
-                  color: cardColor,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFD1D1D1), Color(0xFF2D1B4E)],
+                  ),
                   borderRadius: const BorderRadius.only(topRight: Radius.circular(30), bottomRight: Radius.circular(30)),
                 ),
                 child: SafeArea(
