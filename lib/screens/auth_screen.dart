@@ -28,12 +28,27 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
 
   final _formKey = GlobalKey<FormState>();
 
-  // Цветовая палитра
-  final Color deepPurple = const Color(0xFF2D1B4E);
-  final Color accentPurple = const Color(0xFF9575CD);
+  // Обновленная цветовая палитра
+  final Color deepPurple = const Color(0xFFB0A6E8);
+  final Color accentPurple = const Color(0xFF7862D6);
   final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color textPrimary = const Color(0xFF323045);
+  final Color textSecondary = const Color(0xFF706D8C);
+  final Color weekendRed = const Color(0xFFFF8A80);
 
-  // --- ЛОГИКА SUPABASE (ПРОВЕРЕНО) ---
+  // Очистка всех полей ввода
+  void _clearInputs() {
+    emailController.clear();
+    passwordController.clear();
+    confirmPasswordController.clear();
+    otpController.clear();
+    fioController.clear();
+    ageController.clear();
+    selectedGender = null;
+    selectedRole = 'client';
+  }
+
+  // --- ЛОГИКА SUPABASE ---
 
   Future<void> _startSignUp() async {
     try {
@@ -62,25 +77,37 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     } catch (e) { _showError(e.toString()); }
   }
 
+  // API ЗАПРОС 1: Запрос ссылки на восстановление
   Future<void> _sendPasswordReset() async {
     try {
-      await supabase.auth.resetPasswordForEmail(emailController.text.trim());
+      await supabase.auth.resetPasswordForEmail(
+        emailController.text.trim(),
+        redirectTo: 'soulbuddy://reset-password', // Ссылка для возврата в приложение
+      );
       setState(() => currentStep = AuthStep.forgotPasswordOTP);
     } catch (e) { _showError(e.toString()); }
   }
 
+  // Проверка токена (если введен вручную из URL)
   Future<void> _verifyResetOTP() async {
     try {
-      await supabase.auth.verifyOTP(email: emailController.text.trim(), token: otpController.text.trim(), type: OtpType.recovery);
+      await supabase.auth.verifyOTP(
+          email: emailController.text.trim(),
+          token: otpController.text.trim(),
+          type: OtpType.recovery
+      );
       setState(() => currentStep = AuthStep.resetPassword);
-    } catch (e) { _showError("Неверный код"); }
+    } catch (e) { _showError("Неверный токен или срок его действия истек"); }
   }
 
+  // API ЗАПРОС 2: Обновление пароля (после успеха кидает на логин/главную)
   Future<void> _updatePassword() async {
     if (passwordController.text != confirmPasswordController.text) { _showError("Пароли не совпадают"); return; }
     try {
       await supabase.auth.updateUser(UserAttributes(password: passwordController.text));
-      _navigateToHome();
+      _showError("Пароль успешно изменен");
+      _clearInputs();
+      setState(() => currentStep = AuthStep.login); // Возврат на логин после успеха
     } catch (e) { _showError(e.toString()); }
   }
 
@@ -100,7 +127,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // --- ВСПЛЫВАЮЩИЕ ОКНА С ГРАДИЕНТОМ ---
+  // --- ВСПЛЫВАЮЩИЕ ОКНА ---
 
   void _showAuthDialog(AuthStep initialStep) {
     setState(() => currentStep = initialStep);
@@ -122,7 +149,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(40),
-                  // ГРАДИЕНТ ДЛЯ ВСЕХ ОКОН
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -130,86 +156,93 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                   ),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_getStepTitle(), style: TextStyle(color: deepPurple, fontSize: 24, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 15),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          key: ValueKey(currentStep),
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (currentStep == AuthStep.login) ...[
-                              _buildTextField(emailController, 'Email', Icons.mail_outline),
-                              _buildPasswordField(passwordController, "Пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
-                              // ВЕРНУЛ ФУНКЦИЮ СБРОСА ПАРОЛЯ
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: () => setDialogState(() => currentStep = AuthStep.forgotPasswordEmail),
-                                  child: Text('Забыли пароль?', style: TextStyle(color: accentPurple, fontSize: 13, fontWeight: FontWeight.w600)),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_getStepTitle(), style: TextStyle(color: textPrimary, fontSize: 24, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 15),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            key: ValueKey(currentStep),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (currentStep == AuthStep.login) ...[
+                                _buildTextField(emailController, 'Email', Icons.mail_outline),
+                                _buildPasswordField(passwordController, "Пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: () {
+                                      _clearInputs();
+                                      setDialogState(() => currentStep = AuthStep.forgotPasswordEmail);
+                                    },
+                                    child: Text('Забыли пароль?', style: TextStyle(color: accentPurple, fontSize: 13, fontWeight: FontWeight.w600)),
+                                  ),
                                 ),
-                              ),
+                              ],
+                              if (currentStep == AuthStep.registerEmail || currentStep == AuthStep.forgotPasswordEmail) ...[
+                                _buildTextField(emailController, 'Email', Icons.email_outlined),
+                                if (currentStep == AuthStep.registerEmail) _buildPasswordField(passwordController, "Пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
+                              ],
+                              if (currentStep == AuthStep.registerOTP || currentStep == AuthStep.forgotPasswordOTP) ...[
+                                Text(currentStep == AuthStep.forgotPasswordOTP ? "Введите токен из ссылки в письме" : "Введите код подтверждения", textAlign: TextAlign.center, style: TextStyle(color: textSecondary)),
+                                const SizedBox(height: 10),
+                                _buildTextField(otpController, 'Токен/Код', Icons.vpn_key_outlined),
+                              ],
+                              if (currentStep == AuthStep.registerProfile) ...[
+                                _buildSectionTitle("Ваша роль:"),
+                                Row(children: [
+                                  _customRadioButton("Клиент", selectedRole == 'client', () => setDialogState(() => selectedRole = 'client')),
+                                  const SizedBox(width: 10),
+                                  _customRadioButton("Профи", selectedRole == 'specialist', () => setDialogState(() => selectedRole = 'specialist')),
+                                ]),
+                                const SizedBox(height: 10),
+                                _buildTextField(fioController, 'ФИО', Icons.person_outline),
+                                _genderSelector(setDialogState),
+                                _buildTextField(ageController, 'Возраст', Icons.cake_outlined, isNum: true),
+                              ],
+                              if (currentStep == AuthStep.resetPassword) ...[
+                                _buildPasswordField(passwordController, "Новый пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
+                                _buildPasswordField(confirmPasswordController, "Повторите пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
+                              ],
                             ],
-                            if (currentStep == AuthStep.registerEmail || currentStep == AuthStep.forgotPasswordEmail) ...[
-                              _buildTextField(emailController, 'Email', Icons.email_outlined),
-                              if (currentStep == AuthStep.registerEmail) _buildPasswordField(passwordController, "Пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
-                            ],
-                            if (currentStep == AuthStep.registerOTP || currentStep == AuthStep.forgotPasswordOTP) ...[
-                              Text("Введите код подтверждения", style: TextStyle(color: deepPurple.withOpacity(0.6))),
-                              const SizedBox(height: 10),
-                              _buildTextField(otpController, 'Код', Icons.vpn_key_outlined, isNum: true),
-                            ],
-                            if (currentStep == AuthStep.registerProfile) ...[
-                              _buildSectionTitle("Ваша роль:"),
-                              Row(children: [
-                                _customRadioButton("Клиент", selectedRole == 'client', () => setDialogState(() => selectedRole = 'client')),
-                                const SizedBox(width: 10),
-                                _customRadioButton("Профи", selectedRole == 'specialist', () => setDialogState(() => selectedRole = 'specialist')),
-                              ]),
-                              const SizedBox(height: 10),
-                              _buildTextField(fioController, 'ФИО', Icons.person_outline),
-                              _genderSelector(setDialogState),
-                              _buildTextField(ageController, 'Возраст', Icons.cake_outlined, isNum: true),
-                            ],
-                            if (currentStep == AuthStep.resetPassword) ...[
-                              _buildPasswordField(passwordController, "Новый пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
-                              _buildPasswordField(confirmPasswordController, "Повторите пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
-                            ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: accentPurple,
-                        minimumSize: const Size(double.infinity, 60),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        elevation: 4,
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accentPurple,
+                          minimumSize: const Size(double.infinity, 60),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          elevation: 4,
+                        ),
+                        onPressed: () async {
+                          if (!_formKey.currentState!.validate()) return;
+                          if (currentStep == AuthStep.login) await _login();
+                          else if (currentStep == AuthStep.registerEmail) await _startSignUp();
+                          else if (currentStep == AuthStep.registerOTP) await _verifySignUpOTP();
+                          else if (currentStep == AuthStep.registerProfile) await _completeProfile();
+                          else if (currentStep == AuthStep.forgotPasswordEmail) await _sendPasswordReset();
+                          else if (currentStep == AuthStep.forgotPasswordOTP) await _verifyResetOTP();
+                          else if (currentStep == AuthStep.resetPassword) await _updatePassword();
+                          setDialogState(() {});
+                        },
+                        child: Text(_getButtonText(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                       ),
-                      onPressed: () async {
-                        if (!_formKey.currentState!.validate()) return;
-                        if (currentStep == AuthStep.login) await _login();
-                        else if (currentStep == AuthStep.registerEmail) await _startSignUp();
-                        else if (currentStep == AuthStep.registerOTP) await _verifySignUpOTP();
-                        else if (currentStep == AuthStep.registerProfile) await _completeProfile();
-                        else if (currentStep == AuthStep.forgotPasswordEmail) await _sendPasswordReset();
-                        else if (currentStep == AuthStep.forgotPasswordOTP) await _verifyResetOTP();
-                        else if (currentStep == AuthStep.resetPassword) await _updatePassword();
-                        setDialogState(() {});
-                      },
-                      child: Text(_getButtonText(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text('Отмена', style: TextStyle(color: deepPurple.withOpacity(0.4))),
-                    ),
-                  ],
+                      TextButton(
+                        onPressed: () {
+                          _clearInputs();
+                          Navigator.pop(context);
+                        },
+                        child: Text('Отмена', style: TextStyle(color: textSecondary)),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -222,6 +255,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Container(
         width: double.infinity,
         decoration: BoxDecoration(
@@ -238,7 +272,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // ЛОТОС И ЦИКЛИЧНЫЕ ОРБИТЫ
                     SizedBox(
                       height: 320,
                       width: 320,
@@ -250,28 +283,35 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                             decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [
                               BoxShadow(color: accentPurple.withOpacity(0.2), blurRadius: 100, spreadRadius: 30)
                             ]),
-                            child: Image.asset('assets/images/lotus.png', height: 200),
+                            child: Image.asset('assets/images/White_Lotus.png', height: 260),
                           ),
                         ],
                       ),
                     ),
                     Text("SoulBuddy", style: TextStyle(fontSize: 56, fontWeight: FontWeight.w900, color: warmWhite, letterSpacing: -2)),
-                    Text("Найди свой покой", style: TextStyle(color: warmWhite.withOpacity(0.6), fontSize: 16)),
+                    Text("Найди свой покой", style: TextStyle(color: warmWhite, fontSize: 16)),
                     const SizedBox(height: 70),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 50),
                       child: Column(
                         children: [
-                          _buildMainButton("Войти", true, () { setState(() => isLogin = true); _showAuthDialog(AuthStep.login); }),
+                          _buildMainButton("Войти", true, () {
+                            _clearInputs();
+                            setState(() => isLogin = true);
+                            _showAuthDialog(AuthStep.login);
+                          }),
                           const SizedBox(height: 20),
-                          _buildMainButton("Регистрация", false, () { setState(() => isLogin = false); _showAuthDialog(AuthStep.registerEmail); }),
+                          _buildMainButton("Регистрация", false, () {
+                            _clearInputs();
+                            setState(() => isLogin = false);
+                            _showAuthDialog(AuthStep.registerEmail);
+                          }),
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-              // ТЕСТОВЫЕ КНОПКИ
               Padding(
                 padding: const EdgeInsets.only(bottom: 30),
                 child: Row(
@@ -298,18 +338,27 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       child: Container(
         width: double.infinity, height: 70,
         decoration: BoxDecoration(
-          color: isPrimary ? accentPurple : Colors.white.withOpacity(0.1),
+          color: isPrimary ? accentPurple : Colors.white.withOpacity(0.4),
           borderRadius: BorderRadius.circular(28),
-          border: isPrimary ? null : Border.all(color: warmWhite.withOpacity(0.3)),
+          border: isPrimary ? null : Border.all(color: textPrimary.withOpacity(0.2)),
           boxShadow: isPrimary ? [BoxShadow(color: accentPurple.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10))] : [],
         ),
-        child: Center(child: Text(text, style: TextStyle(color: warmWhite, fontSize: 18, fontWeight: FontWeight.bold))),
+        child: Center(
+            child: Text(
+                text,
+                style: TextStyle(
+                    color: isPrimary ? warmWhite : textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold
+                )
+            )
+        ),
       ),
     );
   }
 
   Widget _debugEntryBtn(String label, VoidCallback onTap) {
-    return GestureDetector(onTap: onTap, child: Text(label, style: TextStyle(color: deepPurple.withOpacity(0.4), fontSize: 13, decoration: TextDecoration.underline)));
+    return GestureDetector(onTap: onTap, child: Text(label, style: TextStyle(color: textSecondary, fontSize: 13, decoration: TextDecoration.underline)));
   }
 
   String _getStepTitle() {
@@ -319,15 +368,16 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       case AuthStep.registerOTP: return "Подтверждение";
       case AuthStep.registerProfile: return "Ваш профиль";
       case AuthStep.forgotPasswordEmail: return "Сброс пароля";
-      case AuthStep.forgotPasswordOTP: return "Код из почты";
+      case AuthStep.forgotPasswordOTP: return "Ввод токена";
       case AuthStep.resetPassword: return "Новый пароль";
     }
   }
 
   String _getButtonText() {
-    if (currentStep == AuthStep.registerOTP || currentStep == AuthStep.forgotPasswordOTP) return "Подтвердить";
-    if (currentStep == AuthStep.registerEmail || currentStep == AuthStep.forgotPasswordEmail) return "Далее";
-    if (currentStep == AuthStep.resetPassword) return "Сохранить";
+    if (currentStep == AuthStep.registerOTP || currentStep == AuthStep.forgotPasswordOTP) return "Проверить";
+    if (currentStep == AuthStep.forgotPasswordEmail) return "Отправить ссылку";
+    if (currentStep == AuthStep.registerEmail) return "Далее";
+    if (currentStep == AuthStep.resetPassword) return "Обновить пароль";
     return isLogin ? "Войти" : "Продолжить";
   }
 
@@ -337,9 +387,10 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       child: TextFormField(
         controller: controller,
         keyboardType: isNum ? TextInputType.number : TextInputType.text,
-        style: TextStyle(color: deepPurple),
+        style: TextStyle(color: textPrimary),
         decoration: InputDecoration(
           labelText: label, prefixIcon: Icon(icon, color: accentPurple),
+          labelStyle: TextStyle(color: textSecondary),
           filled: true, fillColor: Colors.white,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
         ),
@@ -353,9 +404,10 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.only(bottom: 8),
       child: TextFormField(
         controller: controller, obscureText: obscure,
-        style: TextStyle(color: deepPurple),
+        style: TextStyle(color: textPrimary),
         decoration: InputDecoration(
           labelText: label, prefixIcon: Icon(Icons.lock_person_outlined, color: accentPurple),
+          labelStyle: TextStyle(color: textSecondary),
           suffixIcon: IconButton(icon: Icon(obscure ? Icons.visibility_off : Icons.visibility, color: accentPurple), onPressed: () => toggle(!obscure)),
           filled: true, fillColor: Colors.white,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
@@ -379,7 +431,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       onTap: () => setStateDialog(() => selectedGender = gender),
       child: Row(children: [
         Icon(isSel ? Icons.check_circle : Icons.circle_outlined, color: accentPurple, size: 22),
-        const SizedBox(width: 6), Text(gender, style: TextStyle(color: deepPurple)),
+        const SizedBox(width: 6), Text(gender, style: TextStyle(color: textPrimary)),
       ]),
     );
   }
@@ -394,7 +446,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
             color: isSelected ? accentPurple : Colors.white,
             borderRadius: BorderRadius.circular(15),
           ),
-          child: Center(child: Text(title, style: TextStyle(color: isSelected ? Colors.white : deepPurple, fontWeight: FontWeight.bold))),
+          child: Center(child: Text(title, style: TextStyle(color: isSelected ? warmWhite : textPrimary, fontWeight: FontWeight.bold))),
         ),
       ),
     );
@@ -402,7 +454,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
 
   Widget _buildSectionTitle(String title) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 10),
-    child: Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: deepPurple.withOpacity(0.5))),
+    child: Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: textSecondary)),
   );
 }
 
@@ -446,7 +498,7 @@ class _InfiniteDustOrbitState extends State<_InfiniteDustOrbit> with SingleTicke
                 child: Container(
                   width: p.size, height: p.size,
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle, color: widget.color,
+                    shape: BoxShape.circle, color: Color(0xFFFFF9F2),
                     boxShadow: [BoxShadow(color: widget.color, blurRadius: 4)],
                   ),
                 ),

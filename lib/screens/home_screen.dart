@@ -1,6 +1,7 @@
 // lib/screens/home_screen.dart
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,13 +26,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool isDarkTheme = false;
 
-  // Твои фирменные цвета
-  final Color deepPurple = const Color(0xFF2D1B4E);
-  final Color accentPurple = const Color(0xFF9575CD);
+  final Color deepPurple = const Color(0xFFB0A6E8);
+  final Color accentPurple = const Color(0xFF7862D6);
   final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color textPrimary = const Color(0xFF323045);
+  final Color textSecondary = const Color(0xFF706D8C);
+  final Color weekendRed = const Color(0xFFFF8A80);
 
-  // Лавандовый цвет для шторки записей
-  final Color lavenderBackground = const Color(0xFF7E60B2);
+  final Color lavenderBackground = const Color(0xFFB0A6E8);
 
   bool isProfileOpen = false;
   String fullName = 'Пользователь';
@@ -264,11 +266,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
-                    title: const Text("Закрыть без сохранения?"),
-                    content: const Text("Текущая заметка не сохранена."),
+                    title: Text("Закрыть без сохранения?", style: TextStyle(color: textPrimary)),
+                    content: Text("Текущая заметка не сохранена.", style: TextStyle(color: textSecondary)),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Нет")),
-                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Да")),
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: Text("Нет", style: TextStyle(color: textPrimary))),
+                      TextButton(onPressed: () => Navigator.pop(context, true), child: Text("Да", style: TextStyle(color: textPrimary))),
                     ],
                   ),
                 );
@@ -286,11 +288,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 builder: (context, scrollController) => Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    // ОБНОВЛЕННЫЙ ТЕМНЫЙ ФОН ШТОРКИ
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [lavenderBackground, const Color(0xFF370F67)],
+                      colors: [lavenderBackground, warmWhite],
                     ),
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
                   ),
@@ -304,11 +305,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             Expanded(
                               child: Text(
                                 'Записи на ${day.day.toString().padLeft(2, '0')}.${day.month.toString().padLeft(2, '0')}.${day.year}',
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textPrimary),
                               ),
                             ),
                             IconButton(
-                              icon: Icon(Icons.close, color: accentPurple),
+                              icon: Icon(Icons.close, color: textPrimary),
                               onPressed: () => Navigator.of(ctx).pop(),
                             ),
                           ],
@@ -348,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   child: Image.file(File(selectedImagePath!), height: 120, width: double.infinity, fit: BoxFit.cover),
                                 ),
                               ),
-                              IconButton(icon: const Icon(Icons.cancel, color: Colors.white), onPressed: () => setModalState(() => selectedImagePath = null))
+                              IconButton(icon: Icon(Icons.cancel, color: textPrimary.withOpacity(0.5)), onPressed: () => setModalState(() => selectedImagePath = null))
                             ],
                           ),
                         const SizedBox(height: 8),
@@ -356,23 +357,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           controller: newController,
                           maxLines: 3,
                           minLines: 2,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(color: textPrimary),
                           decoration: InputDecoration(
                             hintText: editingId == null ? 'Как прошел день?' : 'Редактирование заметки...',
-                            hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
+                            hintStyle: TextStyle(color: textSecondary),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             filled: true,
-                            fillColor: Colors.white.withOpacity(0.1),
+                            fillColor: Colors.white.withOpacity(0.6),
                           ),
                         ),
                         const SizedBox(height: 8),
                         Row(
                           children: [
                             ElevatedButton.icon(
-                              icon: const Icon(Icons.check, color: Colors.white),
-                              label: const Text("Сохранить", style: TextStyle(color: Colors.white)),
-                              style: ElevatedButton.styleFrom(backgroundColor: accentPurple, elevation: 0),
+                              icon: Icon(Icons.check, color: textPrimary),
+                              label: Text("Сохранить", style: TextStyle(color: textPrimary)),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.7), elevation: 0),
                               onPressed: () async {
                                 final txt = newController.text.trim();
                                 if (txt.isEmpty && selectedImagePath == null) return;
@@ -408,13 +409,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               OutlinedButton(
                                   onPressed: () { editingId = null; newController.clear(); selectedImagePath = null; setModalState(() {}); },
                                   style: OutlinedButton.styleFrom(side: BorderSide(color: accentPurple)),
-                                  child: const Text('Отмена', style: TextStyle(color: Colors.white70))
+                                  child: Text('Отмена', style: TextStyle(color: textSecondary))
                               ),
                           ],
                         ),
                         const SizedBox(height: 12),
                         if (items.isEmpty)
-                          const Text('Заметок пока нет.', style: TextStyle(color: Colors.white38))
+                          Text('Заметок пока нет.', style: TextStyle(color: textSecondary))
                         else
                           Column(
                             children: items.map((note) {
@@ -424,14 +425,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               final imgPath = note['imagePath']?.toString();
                               final bool isNew = (id == newlyAddedId);
 
-                              // СЕРЫЕ ПЛАШКИ С МАТОВЫМ ЭФФЕКТОМ (ДЛЯ ТЕМНОЙ ШТОРКИ)
                               final Widget card = Card(
-                                color: Colors.white.withOpacity(0.12),
+                                color: Colors.white.withOpacity(0.5),
                                 elevation: 0,
                                 margin: const EdgeInsets.only(bottom: 8),
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    side: BorderSide(color: Colors.white.withOpacity(0.05))
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -445,9 +444,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                         ),
                                       ),
                                     ListTile(
-                                      leading: dayMood != null ? Text(moodData[dayMood]['emoji'], style: const TextStyle(fontSize: 24)) : const Icon(Icons.notes, color: Colors.white38),
-                                      title: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-                                      subtitle: Text(formatDate(createdAt), style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4))),
+                                      leading: dayMood != null ? Text(moodData[dayMood]['emoji'], style: const TextStyle(fontSize: 24)) : Icon(Icons.notes, color: textSecondary.withOpacity(0.5)),
+                                      title: Text(text, style: TextStyle(color: textPrimary, fontWeight: FontWeight.w500)),
+                                      subtitle: Text(formatDate(createdAt), style: TextStyle(fontSize: 11, color: textSecondary)),
                                       trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -467,10 +466,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                               final confirm = await showDialog<bool>(
                                                 context: context,
                                                 builder: (dctx) => AlertDialog(
-                                                  title: const Text("Удалить заметку?"),
+                                                  title: Text("Удалить заметку?", style: TextStyle(color: textPrimary)),
                                                   actions: [
-                                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text("Нет")),
-                                                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: const Text("Да")),
+                                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: Text("Нет", style: TextStyle(color: textPrimary))),
+                                                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: Text("Да", style: TextStyle(color: textPrimary))),
                                                   ],
                                                 ),
                                               );
@@ -518,8 +517,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final gridDates = _buildGridDates(visibleMonth);
-    final double topBarHeight = 85;
-    final double calendarHeight = 230;
+    const double topBarHeight = 85;
+    const double calendarHeight = 230;
 
     return Scaffold(
       body: Container(
@@ -547,15 +546,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withOpacity(0.4),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Здравствуйте, $fullName', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                              Text('Здравствуйте, $fullName', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textPrimary)),
                               const SizedBox(height: 6),
-                              Text('Рады видеть вас снова!', style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.8))),
+                              Text('Рады видеть вас снова!', style: TextStyle(fontSize: 16, color: textSecondary)),
                             ],
                           ),
                         ),
@@ -565,20 +564,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Colors.white.withOpacity(0.15), Colors.white.withOpacity(0.05)],
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white.withOpacity(0.2)),
+                            color: Colors.white.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.all(12),
                           child: Column(
                             children: [
                               Row(
                                 children: [
-                                  IconButton(icon: const Icon(Icons.chevron_left, color: Colors.white), onPressed: () { _calendarSlideDirection = -1; _changeMonth(delta: -1); }),
+                                  IconButton(icon: Icon(Icons.chevron_left, color: textPrimary), onPressed: () { _calendarSlideDirection = -1; _changeMonth(delta: -1); }),
                                   Expanded(
                                     child: Center(
                                       child: AnimatedSwitcher(
@@ -587,18 +581,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                           final offset = Tween<Offset>(begin: Offset(0.22 * _calendarSlideDirection, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
                                           return ClipRect(child: SlideTransition(position: offset, child: FadeTransition(opacity: anim, child: child)));
                                         },
-                                        child: Text('${_monthName(visibleMonth.month)} ${visibleMonth.year}', key: ValueKey('${visibleMonth.month}_${visibleMonth.year}'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+                                        child: Text('${_monthName(visibleMonth.month)} ${visibleMonth.year}', key: ValueKey('${visibleMonth.month}_${visibleMonth.year}'), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: textPrimary)),
                                       ),
                                     ),
                                   ),
-                                  IconButton(icon: const Icon(Icons.chevron_right, color: Colors.white), onPressed: () { _calendarSlideDirection = 1; _changeMonth(delta: 1); }),
+                                  IconButton(icon: Icon(Icons.chevron_right, color: textPrimary), onPressed: () { _calendarSlideDirection = 1; _changeMonth(delta: 1); }),
                                 ],
                               ),
                               const SizedBox(height: 6),
                               Row(
                                 children: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d) {
                                   final isWeekend = d == 'Сб' || d == 'Вс';
-                                  return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? Colors.orangeAccent : Colors.white, fontWeight: FontWeight.w600))));
+                                  return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? weekendRed : textSecondary, fontWeight: FontWeight.w600))));
                                 }).toList(),
                               ),
                               const SizedBox(height: 8),
@@ -624,6 +618,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
+                      // Карточка Сессия с психологом
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: InkWell(
@@ -631,25 +626,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           child: Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                                color: accentPurple.withOpacity(0.8),
+                                color: accentPurple.withOpacity(0.3),
                                 borderRadius: BorderRadius.circular(20),
-                                boxShadow: [BoxShadow(color: accentPurple.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5))]
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 5))]
                             ),
-                            child: const Row(
+                            child: Row(
                               children: [
-                                Icon(Icons.videocam, color: Colors.white, size: 30),
-                                SizedBox(width: 15),
+                                Icon(Icons.videocam, color: textPrimary, size: 30),
+                                const SizedBox(width: 15),
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text("Сессия с психологом", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                                  Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                  Text("Сессия с психологом", style: TextStyle(color: textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: textSecondary, fontSize: 12)),
                                 ])),
-                                Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                                Icon(Icons.arrow_forward_ios, color: textPrimary, size: 18),
                               ],
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(height: 12),
+                      // Карточка Дыхательной практики (БЕЛАЯ)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: GestureDetector(
@@ -658,19 +654,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                             decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey.shade300, width: 1.5),
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
+                                color: Colors.white, // Чисто белый цвет[cite: 3]
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]
                             ),
                             child: Row(
                               children: [
                                 SizedBox(width: 60, height: 60, child: Image.asset('assets/images/meditation.png', fit: BoxFit.contain)),
                                 const SizedBox(width: 16),
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  const Text('Дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+                                  Text('Дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textPrimary)),
                                   const SizedBox(height: 4),
-                                  Text('Снижение стресса', style: TextStyle(color: Colors.grey[600], fontSize: 13))
+                                  Text('Снижение стресса', style: TextStyle(color: textSecondary, fontSize: 13))
                                 ])),
                                 Icon(Icons.play_circle_fill, color: accentPurple, size: 40),
                               ],
@@ -684,6 +679,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
+            // ВЕРХНЯЯ ПАНЕЛЬ
             Positioned(
               top: 0, left: 0, right: 0,
               child: Container(
@@ -694,9 +690,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      Positioned(left: 10, child: IconButton(icon: const Icon(Icons.menu, color: Colors.white, size: 28), onPressed: widget.onOpenProfile)),
-                      IgnorePointer(child: Image.asset('assets/images/lotus.png', height: topBarHeight * 0.8)),
-                      Positioned(right: 10, child: IconButton(icon: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalyticsScreen(notesData: notesByDate))))),
+                      Positioned(left: 10, child: IconButton(icon: Icon(Icons.menu, color: textPrimary, size: 28), onPressed: widget.onOpenProfile)),
+                      IgnorePointer(child: Image.asset('assets/images/White_Lotus.png', height: topBarHeight * 0.8)),
+                      Positioned(right: 10, child: IconButton(icon: Icon(Icons.bar_chart_rounded, color: textPrimary, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalyticsScreen(notesData: notesByDate))))),
                     ],
                   ),
                 ),
@@ -727,20 +723,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             final note = notesByDate[dKey];
             final isOtherMonth = d.month != visibleMonth.month;
             final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
+            final isWeekend = d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
 
             Color bg = Colors.transparent;
             String emoji = '';
             bool hasNote = false;
 
             if (note != null) {
-              if (note['items'] != null && (note['items'] as List).isNotEmpty) hasNote = true;
+              final items = (note['items'] as List);
+              if (items.isNotEmpty) {
+                hasNote = true;
+              }
               String? mood = note['dayMood'];
-              if (mood == null && hasNote) mood = (note['items'] as List).first['mood'];
               if (mood != null && moodData.containsKey(mood)) {
-                bg = moodData[mood]['color'].withOpacity(0.4);
+                bg = moodData[mood]['color'].withOpacity(0.3);
                 emoji = moodData[mood]['emoji'] ?? '';
               } else if (hasNote) {
-                bg = Colors.white.withOpacity(0.1);
+                bg = Colors.white.withOpacity(0.4);
               }
             }
 
@@ -754,13 +753,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Container(
                 margin: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: isToday ? Colors.white.withOpacity(0.25) : bg,
+                  color: isToday ? Colors.white.withOpacity(0.7) : bg,
                   borderRadius: BorderRadius.circular(10),
-                  border: (hasNote && emoji.isEmpty) ? Border.all(color: Colors.white.withOpacity(0.4), width: 1) : null,
+                  // ОБВОДКА УДАЛЕНА ПОЛНОСТЬЮ[cite: 3]
+                  border: null,
                 ),
                 child: Stack(
                   children: [
-                    Center(child: Text(d.day.toString().padLeft(2, '0'), style: TextStyle(fontSize: 14, color: isOtherMonth ? Colors.white.withOpacity(0.3) : Colors.white, fontWeight: isToday ? FontWeight.bold : FontWeight.normal))),
+                    Center(child: Text(d.day.toString().padLeft(2, '0'), style: TextStyle(fontSize: 14, color: isOtherMonth ? textSecondary.withOpacity(0.3) : (isWeekend ? weekendRed : textPrimary), fontWeight: isToday ? FontWeight.bold : FontWeight.normal))),
                     if (emoji.isNotEmpty) Positioned(top: 2, right: 2, child: Text(emoji, style: const TextStyle(fontSize: 9))),
                   ],
                 ),
@@ -785,7 +785,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           return Container(
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [deepPurple, const Color(0xFF3D2A5E)]),
+                gradient: LinearGradient(colors: [const Color(0xFFB0A6E8), const Color(0xFFFFF9F2)]),
                 borderRadius: BorderRadius.circular(20)
             ),
             child: Wrap(
@@ -802,7 +802,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _imageSourceTile(IconData icon, String title, ImageSource source, StateSetter setModalState) {
     return ListTile(
       leading: Icon(icon, color: accentPurple),
-      title: Text(title, style: TextStyle(color: Colors.white)),
+      title: Text(title, style: TextStyle(color: textPrimary)),
       onTap: () async {
         Navigator.of(context).pop();
         final image = await ImagePicker().pickImage(source: source);

@@ -22,8 +22,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final Color purple = const Color(0xFF5E3B8C);
   final Color cardColor = const Color(0xFF2D1B4E);
 
+  final Color textPrimary = const Color(0xFF323045);
+  final Color textSecondary = const Color(0xFF706D8C);
+
   // Цвета для градиентов
-  final Color deepPurple = const Color(0xFF2D1B4E);
+  final Color deepPurple = const Color(0xFFB0A6E8);
   final Color warmWhite = const Color(0xFFFFF9F2);
 
   bool isProfileOpen = false;
@@ -162,7 +165,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Color(0xFFD1D1D1), Color(0xFF2D1B4E)],
+                    colors: [ Color(0xFFFFF9F2) , Color(0xFFB0A6E8)],
                   ),
                   borderRadius: const BorderRadius.only(topRight: Radius.circular(30), bottomRight: Radius.circular(30)),
                 ),
@@ -253,7 +256,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(label, style: const TextStyle(fontSize: 11, color: Colors.deepPurple)),
               Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             ],
           ),
