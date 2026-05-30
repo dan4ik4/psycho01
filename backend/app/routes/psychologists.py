@@ -1,44 +1,31 @@
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.deps import get_db  # поправь под твой dependency
+from app.db.deps import get_db
 from app.models.user import User
-from app.models.psychologist_profile import PsychologistProfile
-from app.schemas.psychologists import PsychologistListItem
-from app.models.user import UserRole  # если роли у тебя в enum
+from app.schemas.user import UserRead, PsychologistUpdate
+from app.auth.deps import require_psychologist
+
+router = APIRouter(prefix="/psychologist", tags=["psychologist"])
+
+@router.get("/me", response_model=UserRead)
+async def get_my_psychologist_profile(
+    user: User = Depends(require_psychologist),
+):
+    return user
 
 
-router = APIRouter(prefix="/psychologists", tags=["psychologists"])
+@router.patch("/me", response_model=UserRead)
+async def update_my_psychologist_profile(
+    data: PsychologistUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_psychologist),
+):
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(user, field, value)
 
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
 
-@router.get("", response_model=list[PsychologistListItem])
-async def list_psychologists(db: AsyncSession = Depends(get_db)):
-
-    stmt = (
-        select(User, PsychologistProfile)
-        .join(PsychologistProfile, PsychologistProfile.user_id == User.id)
-        .where(User.role == UserRole.psychologist)
-    )
-
-    res = await db.execute(stmt)
-    rows = res.all()
-
-    out: list[PsychologistListItem] = []
-
-    for user, profile in rows:
-        out.append(
-            PsychologistListItem(
-                id=user.id,
-                email=user.email,
-                specialization=profile.specialization,
-                experience_years=profile.experience_years,
-                licence_number=profile.license_number,
-                price_per_hour=profile.price_per_hour,
-                bio=profile.bio,
-            )
-        )
-
-    return out
+    return user

@@ -1,24 +1,17 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.jobs.slots.cleanup import run_expired_slots_cleanup
-from app.jobs.appointments.status_update import run_appointment_status_update
+from app.jobs.pending_registrations.cleanup import run_cleanup_pending_registrations
 
 scheduler = AsyncIOScheduler()
 
 
 def start_scheduler():
-    scheduler.add_job(
-        run_expired_slots_cleanup,
-        IntervalTrigger(minutes=1),
-        id="slots_cleanup",
-        replace_existing=True,
-    )
 
     scheduler.add_job(
-        run_appointment_status_update,
-        IntervalTrigger(minutes=1),
-        id="appointment_status_update",
+        run_cleanup_pending_registrations,
+        IntervalTrigger(hours=1),
+        id="pending_registrations_cleanup",
         replace_existing=True,
     )
 

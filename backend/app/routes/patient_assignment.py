@@ -1,125 +1,258 @@
-from __future__ import annotations
-
-import uuid
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import uuid
 
 from app.db.deps import get_db
-from app.models.user import User, UserRole
-from app.models.patient_assignment import PatientAssignment, AssignmentStatus
-from app.auth.deps import current_active_user  # если у тебя иначе — поправим
+from app.auth.deps import current_active_user
+from app.models.user import User
+from app.schemas.patient_assignment import (
+    PatientAssignmentFinish,
+    PatientAssignmentOut,
+    PatientAssignmentReject,
+    PatientAssignmentRequestCreate,
+    PatientAssignmentWithLatestEventOut,
+)
+from app.services.patient_assignment import (
+    accept_assignment,
+    request_assignment,
+    reject_assignment,
+    finish_assignment,
+    cancel_assignment,
+)
+from app.crud.patient_assignment import (
+    get_assignments_with_latest_events,
+    get_latest_patient_assignment,
+    get_incoming_assignment_requests,
+    get_active_assignments,
+    get_finished_assignments,
 
+)
 
-router = APIRouter(prefix="/patients/me", tags=["patient-assignment"])
+router = APIRouter(
+    prefix="/patient-assignments",
+    tags=["Patient assignments"],
+)
 
-
-class AssignPsychologistIn(BaseModel):
-    psychologist_id: uuid.UUID
-
-class MyAssignmentOut(BaseModel):
-    psychologist_id: uuid.UUID
-    psychologist_email: str | None = None
-
-
-@router.post("/assignment", status_code=status.HTTP_201_CREATED)
-async def assign_psychologist(
-    payload: AssignPsychologistIn,
+@router.post(
+    "/request",
+    response_model=PatientAssignmentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def request_assignment_endpoint(
+    data: PatientAssignmentRequestCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
 ):
-
-    # 1️⃣ пациент не должен быть психологом
-    if current_user.role != UserRole.user:
+    if user.is_psychologist:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only patients can assign psychologist",
+            detail="Psychologist cannot request assignment",
+        )
+    
+    try:
+        assignment = await request_assignment(
+            db=db,
+            patient_id=user.id,
+            psychologist_id=data.psychologist_id,
+            comment=data.comment,
         )
 
-    # 2️⃣ проверяем, есть ли уже активная привязка
-    stmt = select(PatientAssignment).where(
-        PatientAssignment.patient_id == current_user.id,
-        PatientAssignment.status == AssignmentStatus.ACTIVE,
-    )
-    res = await db.execute(stmt)
-    existing = res.scalar_one_or_none()
+        return assignment
 
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Patient already has active psychologist",
-        )
-
-    # 3️⃣ проверяем, что выбранный user — психолог
-    stmt = select(User).where(User.id == payload.psychologist_id)
-    res = await db.execute(stmt)
-    psychologist = res.scalar_one_or_none()
-
-    if not psychologist or psychologist.role != UserRole.psychologist:
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid psychologist",
+            detail=str(e),
+        )
+    
+@router.post(
+    "/{assignment_id}/accept",
+    response_model=PatientAssignmentOut,
+)
+async def accept_assignment_endpoint(
+    assignment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    try:
+        assignment = await accept_assignment(
+            db=db,
+            assignment_id=assignment_id,
+            psychologist_id=user.id,
         )
 
-    # 4️⃣ создаём привязку
-    assignment = PatientAssignment(
-        patient_id=current_user.id,
-        psychologist_id=payload.psychologist_id,
-        status=AssignmentStatus.ACTIVE,
-    )
+        return assignment
 
-    db.add(assignment)
-    await db.commit()
-
-    return {"ok": True}
-
-@router.get("/assignment", response_model=MyAssignmentOut | None)
-async def get_my_assignment(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(current_active_user),
-):
-    stmt = (
-        select(PatientAssignment, User)
-        .join(User, User.id == PatientAssignment.psychologist_id)
-        .where(
-            PatientAssignment.patient_id == current_user.id,
-            PatientAssignment.status == AssignmentStatus.ACTIVE,
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
         )
-    )
-    res = await db.execute(stmt)
-    row = res.first()
-
-    if not row:
-        return None
-
-    assignment, psychologist = row
-
-    return MyAssignmentOut(
-        psychologist_id=assignment.psychologist_id,
-        psychologist_email=psychologist.email,
-    )
-
-@router.delete("/assignment", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_my_assignment(
+    
+@router.post(
+    "/{assignment_id}/reject",
+    response_model=PatientAssignmentOut,
+)
+async def reject_assignment_endpoint(
+    assignment_id: uuid.UUID,
+    data: PatientAssignmentReject,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
 ):
-    stmt = select(PatientAssignment).where(
-        PatientAssignment.patient_id == current_user.id,
-        PatientAssignment.status == AssignmentStatus.ACTIVE,
-    )
-    res = await db.execute(stmt)
-    assignment = res.scalar_one_or_none()
+    try:
+        assignment = await reject_assignment(
+            db=db,
+            assignment_id=assignment_id,
+            psychologist_id=user.id,
+            comment=data.comment,
+        )
 
-    if not assignment:
-        # если нет активной привязки — просто ок (идемпотентность)
+        return assignment
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    
+@router.post(
+    "/{assignment_id}/finish",
+    response_model=PatientAssignmentOut,
+)
+async def finish_assignment_endpoint(
+    assignment_id: uuid.UUID,
+    data: PatientAssignmentFinish,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    try:
+        assignment = await finish_assignment(
+            db=db,
+            assignment_id=assignment_id,
+            performed_by_id=user.id,
+            comment=data.comment,
+        )
+
+        return assignment
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    
+@router.post(
+    "/{assignment_id}/cancel",
+    response_model=PatientAssignmentOut,
+)
+async def cancel_assignment_endpoint(
+    assignment_id: uuid.UUID,
+    data: PatientAssignmentFinish,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    try:
+        assignment = await cancel_assignment(
+            db=db,
+            assignment_id=assignment_id,
+            patient_id=user.id,
+            comment=data.comment,
+        )
+
+        return assignment
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    
+#get
+
+@router.get(
+    "/my",
+    response_model=PatientAssignmentWithLatestEventOut | None,
+)
+async def get_my_assignment_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    if user.is_psychologist:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Psychologist cannot request assignment",
+        )
+       
+    assignment = await get_latest_patient_assignment(
+        db=db,
+        patient_id=user.id,
+    )
+
+    if assignment is None:
         return None
 
-    assignment.status = AssignmentStatus.ENDED
-    assignment.ended_at = datetime.now(timezone.utc)
+    result = await get_assignments_with_latest_events(
+        db=db,
+        assignments=[assignment],
+    )
 
-    await db.commit()
-    return None
+    return result[0]
+
+@router.get(
+    "/incoming",
+    response_model=list[PatientAssignmentWithLatestEventOut],
+)
+async def get_incoming_assignments_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    if not user.is_psychologist:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Patient cannot view incoming assignments",
+        )
+    assignments = await get_incoming_assignment_requests(
+        db=db,
+        psychologist_id=user.id,
+    )
+
+    return await get_assignments_with_latest_events(
+        db=db,
+        assignments=assignments,
+    )
+
+@router.get(
+    "/active",
+    response_model=list[PatientAssignmentWithLatestEventOut],
+)
+async def get_active_assignments_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    assignments = await get_active_assignments(
+        db=db,
+        user_id=user.id,
+    )
+
+    return await get_assignments_with_latest_events(
+        db=db,
+        assignments=assignments,
+    )
+
+@router.get(
+    "/finished",
+    response_model=list[PatientAssignmentWithLatestEventOut],
+)
+async def get_finished_assignments_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+):
+    assignments = await get_finished_assignments(
+        db=db,
+        user_id=user.id,
+    )
+
+    return await get_assignments_with_latest_events(
+        db=db,
+        assignments=assignments,
+    )

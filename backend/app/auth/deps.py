@@ -1,15 +1,12 @@
 import uuid
-from typing import AsyncGenerator
-
-from fastapi import Depends
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
-from fastapi_users.db import SQLAlchemyUserDatabase
+from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from fastapi_users.jwt import SecretType
 from fastapi_users.manager import BaseUserManager, UUIDIDMixin
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
 
 from app.core.settings import settings
 from app.db.deps import get_db
@@ -85,3 +82,22 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](
 )
 
 current_active_user = fastapi_users.current_user(active=True)
+
+def require_psychologist(user: User = Depends(current_active_user)) -> User:
+    if not user.is_psychologist:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only psychologists can access this endpoint",
+        )
+    return user
+
+def require_superuser(
+    user: User = Depends(current_active_user),
+) -> User:
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only superusers can access this endpoint",
+        )
+
+    return user
