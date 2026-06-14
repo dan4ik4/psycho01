@@ -13,7 +13,13 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
   late Animation<double> _scaleAnimation;
   late ConfettiController _confettiController;
 
-  final Color purple = const Color(0xFF5E3B8C);
+  // Твоя неизменная палитра
+  final Color deepPurple = const Color(0xFFB0A6E8);
+  final Color accentPurple = const Color(0xFF7862D6);
+  final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color textPrimary = const Color(0xFF323045);
+  final Color textSecondary = const Color(0xFF706D8C);
+  final Color weekendRed = const Color(0xFFFF8A80);
 
   String _instructionText = "Готовы?";
   bool _isPlaying = false;
@@ -98,12 +104,14 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F6FF),
+      // ОТЗЕРКАЛЕНО: Фон теперь фиолетовый
+      backgroundColor: deepPurple,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          // ОТЗЕРКАЛЕНО: Иконка назад теперь белая
+          icon: Icon(Icons.arrow_back, color: warmWhite),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -113,12 +121,17 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: purple.withOpacity(0.1),
+                  // ОТЗЕРКАЛЕНО: Плашка счетчика светлая полупрозрачная
+                  color: warmWhite.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(15),
                 ),
                 child: Text(
                   "$_currentCycle / $_totalCycles",
-                  style: TextStyle(color: purple, fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(
+                      color: warmWhite,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16
+                  ),
                 ),
               ),
             ),
@@ -129,12 +142,12 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
         child: Stack(
           alignment: Alignment.topCenter,
           children: [
-            // ИСТОЧНИК КОНФЕТТИ
+            // КОНФЕТТИ (НЕ ТРОГАЕМ)
             ConfettiWidget(
               confettiController: _confettiController,
               blastDirectionality: BlastDirectionality.explosive,
               shouldLoop: false,
-              colors: [
+              colors: const [
                 Colors.green,
                 Colors.blue,
                 Colors.pink,
@@ -142,23 +155,21 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                 Colors.purple,
                 Colors.yellow,
                 Colors.cyan,
-                const Color(0xFFFF00FF), // Это честная Маджента
+                Color(0xFFFF00FF),
                 Colors.pinkAccent,
               ],
-              // ИСПРАВЛЕНО: правильные имена параметров для размера
               minimumSize: const Size(15, 10),
               maximumSize: const Size(30, 15),
-              // ИСПРАВЛЕНО: правильные имена параметров для силы взрыва
               numberOfParticles: 50,
               emissionFrequency: 0.2,
               gravity: 0.1,
-              maxBlastForce: 40, // Максимальная сила
-              minBlastForce: 20, // Минимальная сила
+              maxBlastForce: 40,
+              minBlastForce: 20,
             ),
 
             Column(
               children: [
-                const SizedBox(height: 60), // Текст высоко
+                const SizedBox(height: 60),
 
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 500),
@@ -168,7 +179,8 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                     style: TextStyle(
                       fontSize: 34,
                       fontWeight: FontWeight.bold,
-                      color: purple,
+                      // ОТЗЕРКАЛЕНО: Текст инструкции теперь белый
+                      color: warmWhite,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -176,7 +188,7 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
 
                 const Spacer(flex: 2),
 
-                // Круг
+                // ОТЗЕРКАЛЕНО: Круг теперь белый
                 Center(
                   child: AnimatedBuilder(
                     animation: _scaleAnimation,
@@ -188,8 +200,9 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                           height: 140,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: purple.withOpacity(0.15),
-                            border: Border.all(color: purple.withOpacity(0.3), width: 2),
+                            // Внешние кольца теперь светлые
+                            color: warmWhite.withOpacity(0.1),
+                            border: Border.all(color: warmWhite.withOpacity(0.2), width: 2),
                           ),
                           child: Center(
                             child: Container(
@@ -197,11 +210,13 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                               height: 110,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: purple.withOpacity(0.8),
+                                // Ядро теперь белое
+                                color: warmWhite,
                               ),
                               child: Icon(
                                   _isFinished ? Icons.star : Icons.air,
-                                  color: Colors.white,
+                                  // Иконка внутри стала фиолетовой для контраста
+                                  color: deepPurple,
                                   size: 45
                               ),
                             ),
@@ -221,11 +236,14 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 18),
                       decoration: BoxDecoration(
-                          color: _isFinished ? Colors.green : (_isPlaying ? Colors.redAccent : purple),
+                        // ОТЗЕРКАЛЕНО: Основная кнопка теперь белая, кнопка стоп остается красной
+                          color: _isFinished
+                              ? warmWhite
+                              : (_isPlaying ? weekendRed : warmWhite),
                           borderRadius: BorderRadius.circular(35),
                           boxShadow: [
                             BoxShadow(
-                                color: (_isFinished ? Colors.green : (_isPlaying ? Colors.redAccent : purple)).withOpacity(0.3),
+                                color: Colors.black.withOpacity(0.2),
                                 blurRadius: 20,
                                 offset: const Offset(0, 8)
                             )
@@ -233,7 +251,12 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                       ),
                       child: Text(
                         _isFinished ? "Заново" : (_isPlaying ? "Стоп" : "Начать"),
-                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          // ОТЗЕРКАЛЕНО: Текст на белой кнопке — фиолетовый
+                            color: _isPlaying ? warmWhite : accentPurple,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold
+                        ),
                       ),
                     ),
                   ),

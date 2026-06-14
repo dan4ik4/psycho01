@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:lottie/lottie.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   final Map<String, Map<String, dynamic>> notesData;
@@ -10,20 +11,61 @@ class AnalyticsScreen extends StatefulWidget {
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
 }
 
-class _AnalyticsScreenState extends State<AnalyticsScreen> {
+class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderStateMixin {
   String selectedType = 'week';
   final _startController = TextEditingController();
   final _endController = TextEditingController();
 
-  final Color deepPurple = const Color(0xFF2D1B4E);
-  final Color accentPurple = const Color(0xFF9575CD);
+  final Color deepPurple = const Color(0xFFB0A6E8);
+  final Color accentPurple = const Color(0xFF7862D6);
   final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color textPrimary = const Color(0xFF323045);
+  final Color textSecondary = const Color(0xFF706D8C);
+
+  late AnimationController _emojiController;
+  late Animation<double> _gentleAnimation;
 
   @override
   void initState() {
     super.initState();
     _applyQuickPeriod('week');
+
+    _emojiController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat();
+
+    _gentleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeInOutSine)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeInOutSine)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(0.0),
+        weight: 20,
+      ),
+    ]).animate(_emojiController);
   }
+
+  @override
+  void dispose() {
+    _emojiController.dispose();
+    _startController.dispose();
+    _endController.dispose();
+    super.dispose();
+  }
+
+  final Map<String, dynamic> moodData = {
+    'terrible': {'path': 'assets/lottie/terrible.json', 'color': Colors.redAccent},
+    'bad': {'path': 'assets/lottie/bad.json', 'color': Colors.orange},
+    'neutral': {'path': 'assets/lottie/neutral.json', 'color': Colors.amber},
+    'good': {'path': 'assets/lottie/good.json', 'color': Colors.lightGreen},
+    'excellent': {'path': 'assets/lottie/excellent.json', 'color': Colors.green},
+  };
 
   void _applyQuickPeriod(String type) {
     DateTime now = DateTime.now();
@@ -76,26 +118,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget build(BuildContext context) {
     final stats = _calculateStats();
     final total = stats.values.fold(0, (a, b) => a + b);
+    final maxCount = stats.values.reduce((a, b) => a > b ? a : b);
     final h = MediaQuery.of(context).size.height;
 
     return Scaffold(
       backgroundColor: deepPurple,
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [deepPurple, warmWhite], stops: const [0.6, 1.0],
-          ),
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new, color: warmWhite),
+          onPressed: () => Navigator.pop(context),
         ),
-        child: SafeArea(
+        title: Text(
+          "Аналитика настроения",
+          style: TextStyle(color: warmWhite, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
           child: Column(
             children: [
-              _buildHeader(),
-              const SizedBox(height: 15),
+              const SizedBox(height: 10),
               _buildPeriodSelector(),
 
-              // Анимированное появление полей ввода
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),
                 child: selectedType == 'custom'
@@ -104,41 +153,44 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ),
 
               if (total == 0)
-                Expanded(child: Center(child: Text(
-                  _safeParse(_startController.text) == null ? "Введите дату полностью (дд.мм.гг)" : "Данных не найдено",
-                  style: TextStyle(color: warmWhite.withOpacity(0.4)),
-                )))
-              else
-                Expanded(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 20),
-                      // ГРАФИК (50% ВЫСОТЫ ЭКРАНА)
-                      Container(
-                        height: h * 0.5,
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.07),
-                          borderRadius: BorderRadius.circular(35),
-                          border: Border.all(color: Colors.white.withOpacity(0.1)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            _bar("😫", stats['terrible']!, total, Colors.redAccent),
-                            _bar("😔", stats['bad']!, total, Colors.orangeAccent),
-                            _bar("😐", stats['neutral']!, total, Colors.amberAccent),
-                            _bar("🙂", stats['good']!, total, Colors.lightGreenAccent),
-                            _bar("😊", stats['excellent']!, total, Colors.greenAccent),
-                          ],
-                        ),
-                      ),
-                      const Spacer(),
-                      _buildTotalBadge(total),
-                      const SizedBox(height: 20),
-                    ],
+                SizedBox(
+                  height: h * 0.5,
+                  child: Center(
+                    child: Text(
+                      _safeParse(_startController.text) == null
+                          ? "Введите дату полностью"
+                          : "Данных не найдено",
+                      style: TextStyle(color: warmWhite.withOpacity(0.7)),
+                    ),
                   ),
+                )
+              else
+                Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      height: h * 0.52,
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.fromLTRB(10, 30, 10, 15),
+                      decoration: BoxDecoration(
+                        color: warmWhite.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _bar('terrible', stats['terrible']!, maxCount, total),
+                          _bar('bad', stats['bad']!, maxCount, total),
+                          _bar('neutral', stats['neutral']!, maxCount, total),
+                          _bar('good', stats['good']!, maxCount, total),
+                          _bar('excellent', stats['excellent']!, maxCount, total),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildTotalBadge(total),
+                    const SizedBox(height: 40),
+                  ],
                 ),
             ],
           ),
@@ -147,24 +199,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Row(
-        children: [
-          IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white), onPressed: () => Navigator.pop(context)),
-          const Expanded(child: Center(child: Text("Аналитика настроения", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)))),
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-
   Widget _buildPeriodSelector() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       height: 50,
-      decoration: BoxDecoration(color: Colors.black.withOpacity(0.2), borderRadius: BorderRadius.circular(15)),
+      decoration: BoxDecoration(
+        color: warmWhite.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(15),
+      ),
       child: Row(
         children: ['week', 'month', 'year', 'custom'].map((t) {
           String label = t == 'week' ? "Неделя" : t == 'month' ? "Месяц" : t == 'year' ? "Год" : "Свой";
@@ -179,7 +221,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   color: isSel ? accentPurple : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(label, style: TextStyle(color: isSel ? Colors.white : Colors.white54, fontSize: 13, fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                      color: isSel ? warmWhite : textPrimary,
+                      fontSize: 13,
+                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal
+                  ),
+                ),
               ),
             ),
           );
@@ -190,18 +239,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _buildManualInputBlock() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(25, 15, 25, 5),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
+          color: warmWhite.withOpacity(0.6),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: accentPurple.withOpacity(0.4)),
         ),
         child: Row(
           children: [
             _dateEntry(_startController, "ОТ"),
-            Container(margin: const EdgeInsets.symmetric(horizontal: 15), width: 1, height: 30, color: Colors.white10),
+            Container(width: 1, height: 30, color: textSecondary.withOpacity(0.2), margin: const EdgeInsets.symmetric(horizontal: 15)),
             _dateEntry(_endController, "ДО"),
           ],
         ),
@@ -211,45 +259,105 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _dateEntry(TextEditingController ctrl, String label) {
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(color: accentPurple, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
-          TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            inputFormatters: [DateMaskFormatter()],
-            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
-            decoration: const InputDecoration(hintText: "00.00.00", hintStyle: TextStyle(color: Colors.white12), border: InputBorder.none, isDense: true),
-            onChanged: (_) => setState(() {}),
-          ),
-        ],
+      child: InkWell(
+        onTap: () async {
+          DateTime? picked = await showDatePicker(
+            context: context,
+            initialDate: _safeParse(ctrl.text) ?? DateTime.now(),
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2101),
+            builder: (context, child) {
+              return Theme(
+                data: Theme.of(context).copyWith(
+                  colorScheme: ColorScheme.light(
+                    primary: accentPurple,
+                    onPrimary: warmWhite,
+                    onSurface: textPrimary,
+                  ),
+                ),
+                child: child!,
+              );
+            },
+          );
+          if (picked != null) {
+            setState(() {
+              ctrl.text = DateFormat('dd.MM.yy').format(picked);
+            });
+          }
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(color: accentPurple, fontSize: 10, fontWeight: FontWeight.bold)),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [SmartDateFormatter()],
+              style: TextStyle(color: textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                  hintText: "ДД.ММ.ГГ",
+                  hintStyle: TextStyle(color: textSecondary.withOpacity(0.4)),
+                  border: InputBorder.none,
+                  isDense: true
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _bar(String emoji, int count, int total, Color color) {
-    double percent = count / total;
-    double h = (percent * 250).clamp(15.0, 250.0); // Высота столбика
+  Widget _bar(String moodKey, int count, int maxCount, int total) {
+    double ratio = maxCount > 0 ? count / maxCount : 0;
+    double maxPossibleHeight = 240;
+    double barHeight = (ratio * maxPossibleHeight).clamp(15.0, maxPossibleHeight);
+    double percent = total > 0 ? count / total : 0;
+
+    final color = moodData[moodKey]['color'];
+    final path = moodData[moodKey]['path'];
+
     return Expanded(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text("${(percent * 100).toInt()}%", style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w900)),
+          Text("${(percent * 100).toInt()}%",
+              style: TextStyle(color: textPrimary, fontSize: 12, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 800),
-            curve: Curves.easeOutBack,
-            width: 38, height: h,
+            duration: const Duration(milliseconds: 1000),
+            curve: Curves.fastOutSlowIn,
+            width: 50,
+            height: barHeight,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [color, color.withOpacity(0.4)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: color.withOpacity(0.2), blurRadius: 10, spreadRadius: 1)],
+              color: color,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 3))
+              ],
             ),
-            child: count > 0 && h > 40 ? Center(child: Text("$count", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))) : null,
+            child: count > 0 && barHeight > 35
+                ? Center(child: Text("$count", style: TextStyle(color: warmWhite, fontSize: 13, fontWeight: FontWeight.w900)))
+                : null,
           ),
-          const SizedBox(height: 12),
-          Text(emoji, style: const TextStyle(fontSize: 32)),
+          const SizedBox(height: 15),
+          AnimatedBuilder(
+            animation: _emojiController,
+            builder: (context, child) {
+              return Transform.translate(
+                offset: Offset(0, -5 * _gentleAnimation.value),
+                child: SizedBox(
+                  width: 50,
+                  height: 50,
+                  child: Lottie.asset(
+                    path,
+                    repeat: true,
+                    animate: true,
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -257,36 +365,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _buildTotalBadge(int total) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 40),
-      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 25),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 25),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04), // Почти прозрачная
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        color: warmWhite.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text("Всего записей:", style: TextStyle(color: deepPurple.withOpacity(0.4), fontSize: 15, fontWeight: FontWeight.w500)),
-          Text("$total", style: TextStyle(color: deepPurple, fontSize: 22, fontWeight: FontWeight.w900)),
+          Text("Всего записей:", style: TextStyle(color: textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+          Text("$total", style: TextStyle(color: textPrimary, fontSize: 24, fontWeight: FontWeight.w900)),
         ],
       ),
     );
   }
 }
 
-class DateMaskFormatter extends TextInputFormatter {
+class SmartDateFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final text = newValue.text.replaceAll('.', '');
-    if (text.length > 6) return oldValue;
-
-    var buffer = StringBuffer();
-    for (int i = 0; i < text.length; i++) {
+    if (newValue.text.length < oldValue.text.length) return newValue;
+    final text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+    final buffer = StringBuffer();
+    for (int i = 0; i < text.length && i < 6; i++) {
       buffer.write(text[i]);
       if ((i == 1 || i == 3) && i != text.length - 1) buffer.write('.');
     }
-
     return TextEditingValue(
       text: buffer.toString(),
       selection: TextSelection.collapsed(offset: buffer.toString().length),

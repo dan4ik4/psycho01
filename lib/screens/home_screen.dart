@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -42,12 +43,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   String? selectedImagePath;
 
+  // ОБНОВЛЕННЫЙ moodData: используем пути к Lottie файлам
   final Map<String, dynamic> moodData = {
-    'terrible': {'emoji': '😫', 'color': Colors.redAccent, 'label': 'Ужасно'},
-    'bad': {'emoji': '😔', 'color': Colors.orange, 'label': 'Плохо'},
-    'neutral': {'emoji': '😐', 'color': Colors.amber, 'label': 'Нормально'},
-    'good': {'emoji': '🙂', 'color': Colors.lightGreen, 'label': 'Хорошо'},
-    'excellent': {'emoji': '😊', 'color': Colors.green, 'label': 'Отлично'},
+    'terrible': {'path': 'assets/lottie/terrible.json', 'color': Colors.redAccent, 'label': 'Ужасно'},
+    'bad': {'path': 'assets/lottie/bad.json', 'color': Colors.orange, 'label': 'Плохо'},
+    'neutral': {'path': 'assets/lottie/neutral.json', 'color': Colors.amber, 'label': 'Нормально'},
+    'good': {'path': 'assets/lottie/good.json', 'color': Colors.lightGreen, 'label': 'Хорошо'},
+    'excellent': {'path': 'assets/lottie/excellent.json', 'color': Colors.green, 'label': 'Отлично'},
   };
 
   String formatDate(String iso) {
@@ -288,11 +290,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 builder: (context, scrollController) => Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [lavenderBackground, warmWhite],
-                    ),
+                    color: lavenderBackground,
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
                   ),
                   child: SingleChildScrollView(
@@ -315,6 +313,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                         const SizedBox(height: 8),
+                        // ОБНОВЛЕННЫЙ ВЫБОР НАСТРОЕНИЯ С ЗАПУСКОМ ПО КАСАНИЮ
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: moodData.entries.map((e) {
@@ -332,7 +331,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   shape: BoxShape.circle,
                                   border: Border.all(color: isSel ? e.value['color'] : Colors.transparent, width: 2),
                                 ),
-                                child: Text(e.value['emoji'], style: const TextStyle(fontSize: 28)),
+                                child: Lottie.asset(
+                                  e.value['path'],
+                                  // Ключ заставляет виджет пересоздаваться и запускать анимацию заново при каждом выборе
+                                  key: ValueKey('${e.key}_${dayMood == e.key}'),
+                                  width: 44,
+                                  height: 44,
+                                  repeat: false, // Проигрываем один раз при нажатии
+                                  animate: isSel, // Анимируем только если выбрано
+                                  fit: BoxFit.contain,
+                                ),
                               ),
                             );
                           }).toList(),
@@ -364,7 +372,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             filled: true,
-                            fillColor: Colors.white.withOpacity(0.6),
+                            fillColor: warmWhite.withOpacity(0.6),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -373,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ElevatedButton.icon(
                               icon: Icon(Icons.check, color: textPrimary),
                               label: Text("Сохранить", style: TextStyle(color: textPrimary)),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.7), elevation: 0),
+                              style: ElevatedButton.styleFrom(backgroundColor: warmWhite.withOpacity(0.7), elevation: 0),
                               onPressed: () async {
                                 final txt = newController.text.trim();
                                 if (txt.isEmpty && selectedImagePath == null) return;
@@ -426,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               final bool isNew = (id == newlyAddedId);
 
                               final Widget card = Card(
-                                color: Colors.white.withOpacity(0.5),
+                                color: warmWhite.withOpacity(0.6),
                                 elevation: 0,
                                 margin: const EdgeInsets.only(bottom: 8),
                                 shape: RoundedRectangleBorder(
@@ -444,7 +452,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                         ),
                                       ),
                                     ListTile(
-                                      leading: dayMood != null ? Text(moodData[dayMood]['emoji'], style: const TextStyle(fontSize: 24)) : Icon(Icons.notes, color: textSecondary.withOpacity(0.5)),
+                                      // ОБНОВЛЕННЫЙ ЭМОДЗИ В КАРТОЧКЕ ЗАМЕТКИ (БЕЗ ПОВТОРА)
+                                      leading: dayMood != null
+                                          ? Lottie.asset(
+                                        moodData[dayMood]['path'],
+                                        width: 32,
+                                        height: 32,
+                                        repeat: false, // Проигрываем один раз при отображении
+                                      )
+                                          : Icon(Icons.event_available, color: accentPurple, size: 28),
                                       title: Text(text, style: TextStyle(color: textPrimary, fontWeight: FontWeight.w500)),
                                       subtitle: Text(formatDate(createdAt), style: TextStyle(fontSize: 11, color: textSecondary)),
                                       trailing: Row(
@@ -523,11 +539,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [deepPurple, warmWhite],
-          ),
+          color: deepPurple,
         ),
         child: Stack(
           children: [
@@ -540,13 +552,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Column(
                     children: [
                       const SizedBox(height: 10),
+                      // Карточка Приветствия
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.4),
+                            color: warmWhite.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Column(
@@ -560,11 +573,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                       const SizedBox(height: 8),
+                      // Карточка Календаря
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.3),
+                            color: warmWhite.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.all(12),
@@ -618,49 +632,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 16),
                       // Карточка Сессия с психологом
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: InkWell(
                           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const CallScreen(channelName: "test_room"))),
                           child: Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                                color: accentPurple.withOpacity(0.3),
+                                color: accentPurple,
                                 borderRadius: BorderRadius.circular(20),
                                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 5))]
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.videocam, color: textPrimary, size: 30),
+                                Icon(Icons.videocam, color: warmWhite, size: 30),
                                 const SizedBox(width: 15),
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text("Сессия с психологом", style: TextStyle(color: textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-                                  Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: textSecondary, fontSize: 12)),
+                                  Text("Сессия с психологом", style: TextStyle(color: warmWhite, fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text("Нажмите, чтобы войти в комнату", style: TextStyle(color: warmWhite.withOpacity(0.8), fontSize: 12)),
                                 ])),
-                                Icon(Icons.arrow_forward_ios, color: textPrimary, size: 18),
+                                Icon(Icons.arrow_forward_ios, color: warmWhite, size: 18),
                               ],
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      // Карточка Дыхательной практики (БЕЛАЯ)
+                      const SizedBox(height: 16),
+                      // Карточка Дыхательной практики
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: GestureDetector(
                           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BreathingScreen())),
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                             decoration: BoxDecoration(
-                                color: Colors.white, // Чисто белый цвет[cite: 3]
+                                color: warmWhite.withOpacity(0.6),
                                 borderRadius: BorderRadius.circular(20),
                                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]
                             ),
                             child: Row(
                               children: [
-                                SizedBox(width: 60, height: 60, child: Image.asset('assets/images/meditation.png', fit: BoxFit.contain)),
+                                SizedBox(width: 70, height: 70, child: Image.asset('assets/images/meditation.png', fit: BoxFit.contain)),
                                 const SizedBox(width: 16),
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text('Дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textPrimary)),
@@ -690,9 +705,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      Positioned(left: 10, child: IconButton(icon: Icon(Icons.menu, color: textPrimary, size: 28), onPressed: widget.onOpenProfile)),
+                      Positioned(left: 10, child: IconButton(icon: Icon(Icons.menu, color: warmWhite, size: 28), onPressed: widget.onOpenProfile)),
                       IgnorePointer(child: Image.asset('assets/images/White_Lotus.png', height: topBarHeight * 0.8)),
-                      Positioned(right: 10, child: IconButton(icon: Icon(Icons.bar_chart_rounded, color: textPrimary, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalyticsScreen(notesData: notesByDate))))),
+                      Positioned(right: 10, child: IconButton(icon: Icon(Icons.bar_chart_rounded, color: warmWhite, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnalyticsScreen(notesData: notesByDate))))),
                     ],
                   ),
                 ),
@@ -726,7 +741,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             final isWeekend = d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
 
             Color bg = Colors.transparent;
-            String emoji = '';
             bool hasNote = false;
 
             if (note != null) {
@@ -737,9 +751,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               String? mood = note['dayMood'];
               if (mood != null && moodData.containsKey(mood)) {
                 bg = moodData[mood]['color'].withOpacity(0.3);
-                emoji = moodData[mood]['emoji'] ?? '';
               } else if (hasNote) {
-                bg = Colors.white.withOpacity(0.4);
+                bg = warmWhite.withOpacity(0.5);
               }
             }
 
@@ -753,15 +766,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Container(
                 margin: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: isToday ? Colors.white.withOpacity(0.7) : bg,
+                  color: isToday ? warmWhite.withOpacity(0.8) : bg,
                   borderRadius: BorderRadius.circular(10),
-                  // ОБВОДКА УДАЛЕНА ПОЛНОСТЬЮ[cite: 3]
                   border: null,
                 ),
                 child: Stack(
                   children: [
                     Center(child: Text(d.day.toString().padLeft(2, '0'), style: TextStyle(fontSize: 14, color: isOtherMonth ? textSecondary.withOpacity(0.3) : (isWeekend ? weekendRed : textPrimary), fontWeight: isToday ? FontWeight.bold : FontWeight.normal))),
-                    if (emoji.isNotEmpty) Positioned(top: 2, right: 2, child: Text(emoji, style: const TextStyle(fontSize: 9))),
                   ],
                 ),
               ),
@@ -785,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           return Container(
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [const Color(0xFFB0A6E8), const Color(0xFFFFF9F2)]),
+                color: deepPurple,
                 borderRadius: BorderRadius.circular(20)
             ),
             child: Wrap(
