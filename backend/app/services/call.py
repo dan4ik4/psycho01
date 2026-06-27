@@ -98,7 +98,7 @@ async def join_call(
     uid = generate_agora_uid(user.id)
 
     expire_at = slot.end_at + timedelta(
-        settings.AGORA_JOIN_WINDOW_MINUTES,
+        minutes=settings.AGORA_JOIN_WINDOW_MINUTES,
     )
 
     token = generate_agora_token(
