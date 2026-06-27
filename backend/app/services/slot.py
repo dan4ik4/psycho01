@@ -41,13 +41,18 @@ async def create_slot(
     if end_at - start_at < timedelta(minutes=15):
         raise ValueError("Slot duration must be at least 15 minutes")
 
-    existing_slots = await get_slots_by_psychologist(
+    slots_with_events = await get_slots_with_latest_events(
         db=db,
         psychologist_id=user.id,
     )
 
-    for slot in existing_slots:
-        if start_at < slot.end_at and end_at > slot.start_at:
+    for slot, latest_event in slots_with_events:
+        if (
+            latest_event is not None
+            and latest_event.event_type != SlotEventType.REMOVED
+            and start_at < slot.end_at
+            and end_at > slot.start_at
+        ):
             raise ValueError("Slot overlaps with existing slot")
 
     slot = await create_slot_crud(

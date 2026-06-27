@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:3000"
 
+    DEBUG: bool = True
+
 
     @property
     def DATABASE_URL(self) -> str:

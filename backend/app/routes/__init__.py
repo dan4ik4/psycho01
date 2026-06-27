@@ -9,6 +9,7 @@ from .admin import router as admin_router
 from .psychologist_rating import router as psychologist_rating_router
 from .patient_assignment import router as patient_assignment_router
 from .slot import router as slot_router
+from .call import router as call_router
 
 api = APIRouter(prefix="/api/v1")
 
@@ -45,6 +46,9 @@ api.include_router(
     prefix="/auth",
     tags=["auth"],
 )
+
+#call
+api.include_router(call_router)
 
 #admin
 api.include_router(admin_router)

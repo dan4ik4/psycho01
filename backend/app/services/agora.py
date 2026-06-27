@@ -8,8 +8,8 @@ from app.core.settings import settings
 def generate_agora_uid(user_id: uuid.UUID) -> int:
     return user_id.int % (2**31 - 1)
 
-def generate_agora_channel_name(appointment_id: str) -> str:
-    return f"appointment_{appointment_id}"
+def generate_agora_channel_name(call_id: str) -> str:
+    return f"call_{call_id}"
 
 
 def datetime_to_timestamp(value: datetime) -> int:

@@ -178,6 +178,9 @@ async def finish_assignment(
         assignment_id=assignment_id,
     )
 
+    if assignment is None:
+        raise ValueError("Assignment not found")
+
     if performed_by_id not in (
         assignment.patient_id,
         assignment.psychologist_id,
