@@ -1,23 +1,39 @@
-from pydantic import EmailStr, BaseModel
-from fastapi_users import schemas
 import uuid
-from typing import Optional
-from app.models.user import UserRole
+from datetime import date
+
+from fastapi_users import schemas
+from pydantic import EmailStr, BaseModel, ConfigDict
+
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
-    role: UserRole
+    first_name: str | None = None
+    last_name: str | None = None
+    birth_date: date | None = None
+
+    is_psychologist: bool = False
+
+    specialization: str | None = None
+    license_number: str | None = None
+    bio: str | None = None
+    experience_years: int | None = None
+
 
 class UserCreate(schemas.BaseUserCreate):
     email: EmailStr
     password: str
-    role: UserRole = UserRole.user
 
-class UserUpdateSelf(BaseModel):
-    password: Optional[str] = None
-    # username: Optional[str] = None       # если добавим
-    # avatar_url: Optional[str] = None     # если понадобится
+    first_name: str | None = None
+    last_name: str | None = None
+    birth_date: date | None = None
 
-class UserAdminUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    role: Optional[UserRole] = None
-    is_active: Optional[bool] = None
+
+class UserUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    birth_date: date | None = None
+
+class PsychologistUpdate(BaseModel):
+    specialization: str | None = None
+    license_number: str | None = None
+    bio: str | None = None
+    experience_years: int | None = None

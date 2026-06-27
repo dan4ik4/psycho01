@@ -6,12 +6,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from app.db.base import Base
-import app.models.user
-import app.models.profile
-import app.models.psychologist_profile
-import app.models.pending_registration
-import app.models.patient_assignment
-import app.models.appointment
+import app.models.__init__
 from app.core.settings import settings
 
 config = context.config

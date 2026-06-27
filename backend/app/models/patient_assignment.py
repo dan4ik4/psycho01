@@ -1,51 +1,31 @@
-from __future__ import annotations
-
 import uuid
-from datetime import datetime
-from sqlalchemy import ForeignKey, DateTime, Enum, String
+
+from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
-from app.db.base import Base  # если у тебя Base лежит в другом месте — поправь импорт
-import enum
 
-
-class AssignmentStatus(str, enum.Enum):
-    ACTIVE = "ACTIVE"
-    ENDED = "ENDED"
+from app.db.base import Base
 
 
 class PatientAssignment(Base):
     __tablename__ = "patient_assignments"
 
     id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
 
     patient_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
 
     psychologist_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-    )
-
-    status: Mapped[AssignmentStatus] = mapped_column(
-        Enum(AssignmentStatus),
-        default=AssignmentStatus.ACTIVE,
-        nullable=False,
-    )
-
-    assigned_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    ended_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
+        index=True,
     )
