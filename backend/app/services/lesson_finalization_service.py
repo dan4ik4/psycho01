@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.call import Call
@@ -124,3 +124,55 @@ async def finalize_booked_slot_if_needed(
     await db.refresh(final_event)
 
     return final_event
+
+async def resolve_expired_lesson_outcomes(
+    db: AsyncSession,
+    limit: int = 100,
+) -> int:
+    now = datetime.now(timezone.utc)
+
+    latest_events_subq = (
+        select(
+            SlotEvent.slot_id.label("slot_id"),
+            func.max(SlotEvent.created_at).label("latest_created_at"),
+        )
+        .group_by(SlotEvent.slot_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(Slot)
+        .join(
+            latest_events_subq,
+            latest_events_subq.c.slot_id == Slot.id,
+        )
+        .join(
+            SlotEvent,
+            and_(
+                SlotEvent.slot_id == Slot.id,
+                SlotEvent.created_at == latest_events_subq.c.latest_created_at,
+            ),
+        )
+        .where(
+            Slot.end_at <= now,
+            SlotEvent.event_type == SlotEventType.BOOKED,
+        )
+        .order_by(Slot.end_at.asc())
+        .limit(limit)
+    )
+
+    result = await db.execute(stmt)
+    slots = result.scalars().all()
+
+    finalized_count = 0
+
+    for slot in slots:
+        final_event = await finalize_booked_slot_if_needed(
+            db=db,
+            slot=slot,
+        )
+
+        if final_event is not None:
+            finalized_count += 1
+
+    return finalized_count
