@@ -2,36 +2,39 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-// Цветовая палитра SoulBuddy
 const Color kDeepPurple = Color(0xFFB0A6E8);
 const Color kAccentPurple = Color(0xFF7862D6);
-const Color kWarmWhite = Color(0xFFFFF9F2);
+const Color kWarmWhite = Color(0xFFF6F8FD);
 const Color kTextPrimary = Color(0xFF323045);
 const Color kTextSecondary = Color(0xFF706D8C);
 const Color kWeekendRed = Color(0xFFFF8A80);
 
 class PsychologistDashboard extends StatefulWidget {
+  const PsychologistDashboard({super.key});
+
   @override
   _PsychologistDashboardState createState() => _PsychologistDashboardState();
 }
 
 class _PsychologistDashboardState extends State<PsychologistDashboard> {
   double sessionPrice = 85.0;
-  int sessionDurationMinutes = 60; // Длительность одного сеанса по умолчанию
+  int sessionDurationMinutes = 60;
 
   DateTime visibleMonth = DateTime.now();
   DateTime? _selectedDate;
   int _calendarSlideDirection = 0;
   final DateTime now = DateTime.now();
 
-  // Данные расписания и записей (хранят промежутки времени "HH:mm - HH:mm")
-  Map<String, List<String>> _availableSlots = {}; // Дата -> Доступные времена
-  Map<String, List<Map<String, dynamic>>> _bookedVisits = {}; // Дата -> Записи клиентов
+  Map<String, List<String>> _availableSlots = {};
+  Map<String, List<Map<String, dynamic>>> _bookedVisits = {};
 
-  // Трафарет недели (1 - Пн, 7 - Вс)
   Map<int, List<String>> _weeklyTemplate = {
     1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: []
   };
+
+  // State Machine variables
+  List<Map<String, dynamic>> _incomingRequests = [];
+  List<Map<String, dynamic>> _activeClients = [];
 
   final List<String> _monthNames = [
     'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -57,14 +60,12 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
       sessionPrice = prefs.getDouble('doc_price') ?? 85.0;
       sessionDurationMinutes = prefs.getInt('doc_session_duration') ?? 60;
 
-      // Загрузка трафарета
       final templateStr = prefs.getString('doc_template');
       if (templateStr != null) {
         final Map<String, dynamic> decoded = jsonDecode(templateStr);
         _weeklyTemplate = decoded.map((key, value) => MapEntry(int.parse(key), List<String>.from(value)));
       }
 
-      // Загрузка доступных слотов
       final slotsStr = prefs.getString('doc_slots');
       if (slotsStr != null) {
         final Map<String, dynamic> decoded = jsonDecode(slotsStr);
@@ -72,7 +73,32 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
       }
 
       _bookedVisits = {};
+
+      // Загрузка заявок от клиентов (State Machine)
+      final assignmentStr = prefs.getString('client_assignment');
+      _incomingRequests.clear();
+      _activeClients.clear();
+
+      if (assignmentStr != null) {
+        final Map<String, dynamic> assignment = jsonDecode(assignmentStr);
+        // В реальном приложении здесь фильтрация по psychologistId
+        if (assignment['status'] == 'requested') {
+          _incomingRequests.add(assignment);
+        } else if (assignment['status'] == 'accepted') {
+          _activeClients.add(assignment);
+        }
+      }
     });
+  }
+
+  Future<void> _updateAssignmentStatus(Map<String, dynamic> assignment, String newStatus, {String? commentField, String? commentValue}) async {
+    final prefs = await SharedPreferences.getInstance();
+    assignment['status'] = newStatus;
+    if (commentField != null && commentValue != null) {
+      assignment[commentField] = commentValue;
+    }
+    await prefs.setString('client_assignment', jsonEncode(assignment));
+    _loadData();
   }
 
   Future<void> _saveSettings() async {
@@ -109,7 +135,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     return weeks.expand((w) => w).toList();
   }
 
-  // Автоматический расчет интервала времени на основе начала и длительности
   String _calculateInterval(String startTime, int durationMinutes) {
     try {
       final parts = startTime.split(':');
@@ -125,7 +150,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     }
   }
 
-  // Применение трафарета к выбранному месяцу (ПОЛНАЯ ПЕРЕЗАПИСЬ)
   void _applyTemplateToMonth() {
     final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
     final lastDay = DateTime(visibleMonth.year, visibleMonth.month + 1, 0);
@@ -136,18 +160,15 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         final dateStr = _formatToYMD(d);
 
         final templateForDay = _weeklyTemplate[d.weekday] ?? [];
-
-        // Получаем время, на которое уже есть записи (чтобы не удалить их из сетки)
         final bookedTimes = (_bookedVisits[dateStr] ?? []).map((b) => b['time'] as String).toList();
 
-        // Формируем новые слоты: только шаблон + забронированные клиентами
         final newSlots = {...templateForDay, ...bookedTimes}.toList();
         newSlots.sort((a, b) => a.compareTo(b));
 
         if (newSlots.isNotEmpty) {
           _availableSlots[dateStr] = newSlots;
         } else {
-          _availableSlots.remove(dateStr); // Очищаем день, если шаблон пуст
+          _availableSlots.remove(dateStr);
         }
       }
     });
@@ -155,14 +176,11 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Расписание на месяц успешно обновлено", style: TextStyle(color: kWarmWhite)), backgroundColor: kAccentPurple));
   }
 
-  // Диалог выбора времени начала
-  // Крупный и аккуратный барабан выбора времени в стиле Samsung
   Future<void> _pickTime(BuildContext context, Function(String) onTimePicked) async {
     final now = TimeOfDay.now();
     int selectedHour = now.hour;
     int selectedMinute = now.minute;
 
-    // Контроллеры для установки начального положения барабанов
     final FixedExtentScrollController hourController = FixedExtentScrollController(initialItem: selectedHour);
     final FixedExtentScrollController minuteController = FixedExtentScrollController(initialItem: selectedMinute);
 
@@ -180,32 +198,21 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Заголовок окна
-                  const Text(
-                    "Выберите время",
-                    style: TextStyle(
-                      color: kTextPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  const Text("Выберите время", style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 25),
-
-                  // Основной блок с барабанами времени
                   SizedBox(
-                    height: 160, // Ограничиваем высоту, чтобы было видно ровно 3 ряда чисел
+                    height: 160,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Барабан ЧАСОВ
                         SizedBox(
                           width: 75,
                           child: ListWheelScrollView.useDelegate(
                             controller: hourController,
-                            itemExtent: 50, // Высота каждого элемента
-                            perspective: 0.002, // Минимальное 3D-искривление для плоского вида
+                            itemExtent: 50,
+                            perspective: 0.002,
                             diameterRatio: 1.5,
-                            physics: const FixedExtentScrollPhysics(), // Плавная фиксация на элементе
+                            physics: const FixedExtentScrollPhysics(),
                             onSelectedItemChanged: (index) {
                               setModalState(() => selectedHour = index);
                             },
@@ -227,21 +234,10 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                             ),
                           ),
                         ),
-
-                        // Разделительное двоеточие
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            ":",
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: kAccentPurple.withOpacity(0.8),
-                            ),
-                          ),
+                          child: Text(":", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: kAccentPurple.withOpacity(0.8))),
                         ),
-
-                        // Барабан МИНУТ
                         SizedBox(
                           width: 75,
                           child: ListWheelScrollView.useDelegate(
@@ -275,20 +271,13 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                     ),
                   ),
                   const SizedBox(height: 25),
-
-                  // Кнопки управления (Нижний ряд)
                   Row(
                     children: [
                       Expanded(
                         child: TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                           onPressed: () => Navigator.pop(context),
-                          child: const Text(
-                            "Отмена",
-                            style: TextStyle(color: kTextSecondary, fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
+                          child: const Text("Отмена", style: TextStyle(color: kTextSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -298,19 +287,14 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                             backgroundColor: kAccentPurple,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
                           onPressed: () {
                             final formattedTime = "${selectedHour.toString().padLeft(2, '0')}:${selectedMinute.toString().padLeft(2, '0')}";
                             onTimePicked(formattedTime);
                             Navigator.pop(context);
                           },
-                          child: const Text(
-                            "Готово",
-                            style: TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
+                          child: const Text("Готово", style: TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],
@@ -331,7 +315,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         builder: (ctx) => AlertDialog(
           backgroundColor: kWarmWhite,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text("Установить стоимость сеанса", style: TextStyle(color: kTextPrimary, fontSize: 18)),
+          title: const Text("Установить стоимость", style: TextStyle(color: kTextPrimary, fontSize: 18)),
           content: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
@@ -354,7 +338,54 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     );
   }
 
-  // Окно управления трафаретом недели
+  void _showRejectOrFinishDialog(Map<String, dynamic> req, bool isReject) {
+    TextEditingController commentCtrl = TextEditingController();
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Container(
+          decoration: const BoxDecoration(color: kDeepPurple, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+          child: Container(
+            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
+            padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(isReject ? "Отклонение заявки" : "Завершение работы", style: const TextStyle(color: kTextPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Text(isReject ? "Укажите причину отказа (например, 'Нет свободных мест')" : "Оставьте комментарий о завершении терапии", style: const TextStyle(color: kTextSecondary, fontSize: 14)),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: commentCtrl,
+                  maxLines: 3,
+                  style: const TextStyle(color: kTextPrimary),
+                  decoration: InputDecoration(
+                    hintText: "Напишите здесь...",
+                    filled: true, fillColor: kDeepPurple.withOpacity(0.1),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: isReject ? kWeekendRed : kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                    onPressed: () {
+                      _updateAssignmentStatus(req, isReject ? 'rejected' : 'finished', commentField: isReject ? 'rejectComment' : 'finishComment', commentValue: commentCtrl.text.trim());
+                      Navigator.pop(ctx);
+                    },
+                    child: Text(isReject ? "Отклонить заявку" : "Завершить работу", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                )
+              ],
+            ),
+          ),
+        )
+    );
+  }
+
   void _showWeeklyTemplateEditor() {
     int selectedWeekday = 1;
     TextEditingController durationController = TextEditingController(text: sessionDurationMinutes.toString());
@@ -379,44 +410,30 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text("Шаблон расписания", style: TextStyle(color: kWarmWhite, fontSize: 22, fontWeight: FontWeight.bold)),
+                        const Text("Шаблон", style: TextStyle(color: kWarmWhite, fontSize: 22, fontWeight: FontWeight.bold)),
                         IconButton(icon: const Icon(Icons.close, color: kWarmWhite), onPressed: () => Navigator.pop(ctx))
                       ],
                     ),
-                    const Text("Настройте стандартную неделю, чтобы быстро применять её к месяцам.", style: TextStyle(color: Colors.white70, fontSize: 14)),
                     const SizedBox(height: 15),
-
-                    // Блок ручного вписывания продолжительности сессии
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text("Длительность сеанса (мин):", style: TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.w500)),
+                        const Text("Длительность (мин):", style: TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.w500)),
                         Container(
                           width: 90,
                           padding: const EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            color: kWarmWhite.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                          decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
                           child: TextField(
                             controller: durationController,
                             keyboardType: TextInputType.number,
                             textAlign: TextAlign.center,
                             style: const TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.bold),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 10),
-                            ),
+                            decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 10)),
                             onChanged: (value) {
                               final parsed = int.tryParse(value);
                               if (parsed != null && parsed > 0) {
-                                setModalState(() {
-                                  sessionDurationMinutes = parsed;
-                                });
-                                setState(() {
-                                  sessionDurationMinutes = parsed;
-                                });
+                                setModalState(() => sessionDurationMinutes = parsed);
+                                setState(() => sessionDurationMinutes = parsed);
                                 _saveSettings();
                               }
                             },
@@ -425,8 +442,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                       ],
                     ),
                     const SizedBox(height: 15),
-
-                    // Переключатель дней недели
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: List.generate(7, (index) {
@@ -436,20 +451,15 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                           onTap: () => setModalState(() => selectedWeekday = dayNum),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            decoration: BoxDecoration(
-                                color: isSel ? kAccentPurple : kWarmWhite.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(15)
-                            ),
+                            decoration: BoxDecoration(color: isSel ? kAccentPurple : kWarmWhite.withOpacity(0.15), borderRadius: BorderRadius.circular(15)),
                             child: Text(_weekDays[index], style: TextStyle(color: isSel ? kWarmWhite : kWarmWhite.withOpacity(0.9), fontWeight: FontWeight.bold)),
                           ),
                         );
                       }),
                     ),
                     const SizedBox(height: 20),
-
-                    Text("Время для ${_fullWeekDaysGenitive[selectedWeekday-1]}", style: const TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.bold)),                    const SizedBox(height: 10),
-
-                    // Таблица временных промежутков шаблона
+                    Text("Время для ${_fullWeekDaysGenitive[selectedWeekday-1]}", style: const TextStyle(color: kWarmWhite, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
                     Expanded(
                       child: Container(
                         width: double.infinity,
@@ -459,16 +469,10 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                           child: GridView.builder(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio: 2.8,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                            ),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 2.8, crossAxisSpacing: 10, mainAxisSpacing: 10),
                             itemCount: daySlots.length + 1,
                             itemBuilder: (context, index) {
                               if (index == daySlots.length) {
-                                // Кнопка добавления промежутка
                                 return InkWell(
                                   onTap: () {
                                     _pickTime(context, (time) {
@@ -483,51 +487,21 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                                     });
                                   },
                                   child: Container(
-                                    decoration: BoxDecoration(
-                                      color: kWarmWhite,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
+                                    decoration: BoxDecoration(color: kWarmWhite, borderRadius: BorderRadius.circular(12)),
                                     alignment: Alignment.center,
-                                    child: const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.add, color: kTextPrimary, size: 18),
-                                        SizedBox(width: 4),
-                                        Text("Добавить", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                                      ],
-                                    ),
+                                    child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.add, color: kTextPrimary, size: 18), SizedBox(width: 4), Text("Добавить", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold, fontSize: 13))]),
                                   ),
                                 );
                               }
-
                               final t = daySlots[index];
                               return Container(
-                                decoration: BoxDecoration(
-                                  color: kAccentPurple,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                                decoration: BoxDecoration(color: kAccentPurple, borderRadius: BorderRadius.circular(12)),
                                 padding: const EdgeInsets.symmetric(horizontal: 10),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        t,
-                                        style: const TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 13),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: const Icon(Icons.close, color: kWarmWhite, size: 16),
-                                      onPressed: () {
-                                        setModalState(() {
-                                          _weeklyTemplate[selectedWeekday]?.remove(t);
-                                        });
-                                        _saveSchedule();
-                                      },
-                                    ),
+                                    Expanded(child: Text(t, style: const TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 13), textAlign: TextAlign.center)),
+                                    IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(), icon: const Icon(Icons.close, color: kWarmWhite, size: 16), onPressed: () { setModalState(() => _weeklyTemplate[selectedWeekday]?.remove(t)); _saveSchedule(); }),
                                   ],
                                 ),
                               );
@@ -541,10 +515,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                       width: double.infinity, height: 55,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(backgroundColor: kWarmWhite, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                        onPressed: () {
-                          _applyTemplateToMonth();
-                          Navigator.pop(ctx);
-                        },
+                        onPressed: () { _applyTemplateToMonth(); Navigator.pop(ctx); },
                         child: const Text("ПРИМЕНИТЬ К ЭТОМУ МЕСЯЦУ", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
                       ),
                     )
@@ -665,7 +636,95 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text("Мой кабинет", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: kWarmWhite)),
-                    const SizedBox(height: 20),
+
+                    // Блок входящих заявок (State Machine)
+                    if (_incomingRequests.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      const Text("Новые заявки", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      Column(
+                        children: _incomingRequests.map((req) => Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: BorderRadius.circular(20)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(backgroundColor: kAccentPurple.withOpacity(0.2), child: const Icon(Icons.person, color: kAccentPurple)),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text(req['clientName'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16))),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Text("«${req['requestComment']}»", style: const TextStyle(color: kTextSecondary, fontStyle: FontStyle.italic)),
+                              const SizedBox(height: 15),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => _showRejectOrFinishDialog(req, true),
+                                      style: OutlinedButton.styleFrom(side: const BorderSide(color: kWeekendRed), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                                      child: const Text("Отклонить", style: TextStyle(color: kWeekendRed)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () => _updateAssignmentStatus(req, 'accepted'),
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
+                                      child: const Text("Принять", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ),
+                                  )
+                                ],
+                              )
+                            ],
+                          ),
+                        )).toList(),
+                      ),
+                    ],
+
+                    // Блок активных клиентов
+                    if (_activeClients.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      const Text("Активные клиенты", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: _activeClients.map((client) => Container(
+                            width: 200,
+                            margin: const EdgeInsets.only(right: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.8), borderRadius: BorderRadius.circular(20), border: Border.all(color: kAccentPurple.withOpacity(0.3))),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                                    const SizedBox(width: 6),
+                                    Expanded(child: Text(client['clientName'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary), overflow: TextOverflow.ellipsis)),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: TextButton(
+                                    style: TextButton.styleFrom(backgroundColor: kAccentPurple.withOpacity(0.1), padding: const EdgeInsets.symmetric(vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                                    onPressed: () => _showRejectOrFinishDialog(client, false),
+                                    child: const Text("Завершить", style: TextStyle(color: kAccentPurple, fontSize: 13, fontWeight: FontWeight.bold)),
+                                  ),
+                                )
+                              ],
+                            ),
+                          )).toList(),
+                        ),
+                      )
+                    ],
+
+                    const SizedBox(height: 25),
 
                     // Кнопка настройки стоимости
                     GestureDetector(
@@ -808,7 +867,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                       ),
                       const SizedBox(height: 15),
 
-                      // Карточки записанных клиентов
                       if (currentBookings.isNotEmpty) ...[
                         Column(
                           children: currentBookings.map((b) => Container(
@@ -840,7 +898,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                         const SizedBox(height: 15),
                       ],
 
-                      // Таблица свободных временных промежутков на выбранный день
                       const Text("Свободное время", style: TextStyle(color: kWarmWhite, fontSize: 16)),
                       const SizedBox(height: 10),
                       Container(
@@ -859,7 +916,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                           itemCount: currentSlots.length + 1,
                           itemBuilder: (context, index) {
                             if (index == currentSlots.length) {
-                              // Кнопка добавления промежутка
                               return InkWell(
                                 onTap: () {
                                   _pickTime(context, (time) {

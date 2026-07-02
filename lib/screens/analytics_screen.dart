@@ -18,7 +18,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
 
   final Color deepPurple = const Color(0xFFB0A6E8);
   final Color accentPurple = const Color(0xFF7862D6);
-  final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color warmWhite = const Color(0xFFF6F8FD); // Ghost / Soft Lavender White
   final Color textPrimary = const Color(0xFF323045);
   final Color textSecondary = const Color(0xFF706D8C);
 
@@ -160,7 +160,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                       _safeParse(_startController.text) == null
                           ? "Введите дату полностью"
                           : "Данных не найдено",
-                      style: TextStyle(color: warmWhite.withOpacity(0.7)),
+                      style: TextStyle(color: warmWhite.withOpacity(0.8)),
                     ),
                   ),
                 )
@@ -173,7 +173,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                       margin: const EdgeInsets.symmetric(horizontal: 20),
                       padding: const EdgeInsets.fromLTRB(10, 30, 10, 15),
                       decoration: BoxDecoration(
-                        color: warmWhite.withOpacity(0.6),
+                        color: warmWhite.withOpacity(0.8),
                         borderRadius: BorderRadius.circular(24),
                       ),
                       child: Row(
@@ -204,7 +204,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       margin: const EdgeInsets.symmetric(horizontal: 20),
       height: 50,
       decoration: BoxDecoration(
-        color: warmWhite.withOpacity(0.6),
+        color: warmWhite.withOpacity(0.8),
         borderRadius: BorderRadius.circular(15),
       ),
       child: Row(
@@ -243,7 +243,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: warmWhite.withOpacity(0.6),
+          color: warmWhite.withOpacity(0.8),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
@@ -368,7 +368,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 25),
       decoration: BoxDecoration(
-        color: warmWhite.withOpacity(0.6),
+        color: warmWhite.withOpacity(0.8),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(

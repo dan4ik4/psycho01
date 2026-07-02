@@ -29,7 +29,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   final Color deepPurple = const Color(0xFFB0A6E8);
   final Color accentPurple = const Color(0xFF7862D6);
-  final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color warmWhite = const Color(0xFFF6F8FD); // Ghost / Soft Lavender White
   final Color textPrimary = const Color(0xFF323045);
   final Color textSecondary = const Color(0xFF706D8C);
   final Color weekendRed = const Color(0xFFFF8A80);
@@ -43,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   String? selectedImagePath;
 
-  // ОБНОВЛЕННЫЙ moodData: используем пути к Lottie файлам
   final Map<String, dynamic> moodData = {
     'terrible': {'path': 'assets/lottie/terrible.json', 'color': Colors.redAccent, 'label': 'Ужасно'},
     'bad': {'path': 'assets/lottie/bad.json', 'color': Colors.orange, 'label': 'Плохо'},
@@ -241,6 +240,63 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     )));
   }
 
+  // Общий метод для красивых окон подтверждения
+  Future<bool?> _showStyledDialog(BuildContext context, String title, String content, String confirmText, Color confirmColor) {
+    return showGeneralDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (context, a1, a2) => Container(),
+        transitionBuilder: (context, a1, a2, child) {
+          return ScaleTransition(
+              scale: CurvedAnimation(parent: a1, curve: Curves.easeOutBack),
+              child: Dialog(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  child: Container(
+                      padding: const EdgeInsets.all(28),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(40),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFF6F8FD), Color(0xFFF1EAFF)], // warmWhite to light purple
+                        ),
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)],
+                      ),
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(title, style: const TextStyle(color: Color(0xFF323045), fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                            const SizedBox(height: 15),
+                            Text(content, style: const TextStyle(color: Color(0xFF706D8C), fontSize: 16), textAlign: TextAlign.center),
+                            const SizedBox(height: 25),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Назад", style: TextStyle(color: Color(0xFF706D8C), fontSize: 16))),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: confirmColor,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    elevation: 4,
+                                  ),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: Text(confirmText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                ),
+                              ],
+                            )
+                          ]
+                      )
+                  )
+              )
+          );
+        }
+    );
+  }
+
   void _openDaySheet(DateTime day) {
     final dateKey = _dateKey(day);
     final existing = notesByDate[dateKey];
@@ -265,16 +321,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             onWillPop: () async {
               if (!confirmShown && newController.text.trim().isNotEmpty && editingId == null) {
                 confirmShown = true;
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: Text("Закрыть без сохранения?", style: TextStyle(color: textPrimary)),
-                    content: Text("Текущая заметка не сохранена.", style: TextStyle(color: textSecondary)),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: Text("Нет", style: TextStyle(color: textPrimary))),
-                      TextButton(onPressed: () => Navigator.pop(context, true), child: Text("Да", style: TextStyle(color: textPrimary))),
-                    ],
-                  ),
+                final confirm = await _showStyledDialog(
+                    context,
+                    "Закрыть без сохранения?",
+                    "Текущая заметка не сохранена.",
+                    "Закрыть",
+                    weekendRed
                 );
                 confirmShown = false;
                 return confirm == true;
@@ -313,7 +365,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        // ОБНОВЛЕННЫЙ ВЫБОР НАСТРОЕНИЯ С ЗАПУСКОМ ПО КАСАНИЮ
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: moodData.entries.map((e) {
@@ -333,12 +384,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 ),
                                 child: Lottie.asset(
                                   e.value['path'],
-                                  // Ключ заставляет виджет пересоздаваться и запускать анимацию заново при каждом выборе
                                   key: ValueKey('${e.key}_${dayMood == e.key}'),
                                   width: 44,
                                   height: 44,
-                                  repeat: false, // Проигрываем один раз при нажатии
-                                  animate: isSel, // Анимируем только если выбрано
+                                  repeat: false,
+                                  animate: isSel,
                                   fit: BoxFit.contain,
                                 ),
                               ),
@@ -372,7 +422,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             filled: true,
-                            fillColor: warmWhite.withOpacity(0.6),
+                            fillColor: warmWhite.withOpacity(0.8),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -381,7 +431,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ElevatedButton.icon(
                               icon: Icon(Icons.check, color: textPrimary),
                               label: Text("Сохранить", style: TextStyle(color: textPrimary)),
-                              style: ElevatedButton.styleFrom(backgroundColor: warmWhite.withOpacity(0.7), elevation: 0),
+                              style: ElevatedButton.styleFrom(backgroundColor: warmWhite.withOpacity(0.8), elevation: 0),
                               onPressed: () async {
                                 final txt = newController.text.trim();
                                 if (txt.isEmpty && selectedImagePath == null) return;
@@ -433,8 +483,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               final imgPath = note['imagePath']?.toString();
                               final bool isNew = (id == newlyAddedId);
 
+                              // Проверка на уникальный символ визита
+                              final bool isAppointment = text.contains('💠');
+
                               final Widget card = Card(
-                                color: warmWhite.withOpacity(0.6),
+                                color: warmWhite.withOpacity(0.8),
                                 elevation: 0,
                                 margin: const EdgeInsets.only(bottom: 8),
                                 shape: RoundedRectangleBorder(
@@ -452,13 +505,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                         ),
                                       ),
                                     ListTile(
-                                      // ОБНОВЛЕННЫЙ ЭМОДЗИ В КАРТОЧКЕ ЗАМЕТКИ (БЕЗ ПОВТОРА)
-                                      leading: dayMood != null
+                                      leading: dayMood != null && !isAppointment
                                           ? Lottie.asset(
                                         moodData[dayMood]['path'],
                                         width: 32,
                                         height: 32,
-                                        repeat: false, // Проигрываем один раз при отображении
+                                        repeat: false,
                                       )
                                           : Icon(Icons.event_available, color: accentPurple, size: 28),
                                       title: Text(text, style: TextStyle(color: textPrimary, fontWeight: FontWeight.w500)),
@@ -479,23 +531,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                             icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
                                             onPressed: () async {
                                               FocusScope.of(context).unfocus();
-                                              final confirm = await showDialog<bool>(
-                                                context: context,
-                                                builder: (dctx) => AlertDialog(
-                                                  title: Text("Удалить заметку?", style: TextStyle(color: textPrimary)),
-                                                  actions: [
-                                                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: Text("Нет", style: TextStyle(color: textPrimary))),
-                                                    TextButton(onPressed: () => Navigator.pop(dctx, true), child: Text("Да", style: TextStyle(color: textPrimary))),
-                                                  ],
-                                                ),
-                                              );
-                                              if (confirm == true) {
-                                                await _deleteNoteById(day, noteId: id);
-                                                items.removeWhere((e) => e["id"].toString() == id);
-                                                if (editingId == id) { editingId = null; newController.clear(); selectedImagePath = null; }
-                                                setModalState(() {});
-                                                if (mounted) setState(() {});
+
+                                              if (isAppointment) {
+                                                // Окно 1: Подтверждение отмены
+                                                final confirmCancel = await _showStyledDialog(
+                                                    context,
+                                                    "Отмена записи",
+                                                    "Вы действительно хотите отменить запись к психологу на ${day.day.toString().padLeft(2, '0')}.${day.month.toString().padLeft(2, '0')}.${day.year}?",
+                                                    "Да, отменить",
+                                                    weekendRed
+                                                );
+
+                                                if (confirmCancel != true) return;
+
+                                                // Окно 2: Предупреждение о неустойке
+                                                if (!context.mounted) return;
+
+                                                String timeStr = note['time']?.toString() ?? "00:00";
+                                                if (timeStr.contains(" - ")) timeStr = timeStr.split(" - ")[0];
+                                                List<String> timeParts = timeStr.split(":");
+                                                DateTime appointmentTime = DateTime(
+                                                    day.year, day.month, day.day,
+                                                    int.tryParse(timeParts[0]) ?? 0,
+                                                    timeParts.length > 1 ? (int.tryParse(timeParts[1]) ?? 0) : 0
+                                                );
+
+                                                Duration diff = appointmentTime.difference(DateTime.now());
+                                                bool isPenalty = diff.inHours < 24;
+
+                                                if (isPenalty) {
+                                                  final confirmForfeit = await _showStyledDialog(
+                                                      context,
+                                                      "Внимание",
+                                                      "При отмене визита менее чем за 24 часа удерживается неустойка 100%. Вы уверены, что хотите продолжить?",
+                                                      "Согласен",
+                                                      weekendRed
+                                                  );
+                                                  if (confirmForfeit != true) return;
+                                                }
+                                              } else {
+                                                // Стандартное красивое окно для обычной заметки
+                                                final confirm = await _showStyledDialog(
+                                                    context,
+                                                    "Удалить заметку?",
+                                                    "Восстановить её будет невозможно.",
+                                                    "Удалить",
+                                                    weekendRed
+                                                );
+                                                if (confirm != true) return;
                                               }
+
+                                              // Логика удаления
+                                              await _deleteNoteById(day, noteId: id);
+                                              items.removeWhere((e) => e["id"].toString() == id);
+                                              if (editingId == id) { editingId = null; newController.clear(); selectedImagePath = null; }
+                                              setModalState(() {});
+                                              if (mounted) setState(() {});
                                             },
                                           ),
                                         ],
@@ -559,7 +650,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: warmWhite.withOpacity(0.6),
+                            color: warmWhite.withOpacity(0.8),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Column(
@@ -578,7 +669,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: warmWhite.withOpacity(0.5),
+                            color: warmWhite.withOpacity(0.8),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.all(12),
@@ -669,13 +760,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                             decoration: BoxDecoration(
-                                color: warmWhite.withOpacity(0.6),
+                                color: warmWhite.withOpacity(0.8),
                                 borderRadius: BorderRadius.circular(20),
                                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]
                             ),
                             child: Row(
                               children: [
-                                SizedBox(width: 70, height: 70, child: Image.asset('assets/images/meditation.png', fit: BoxFit.contain)),
+                                SizedBox(width: 50, height: 50, child: Image.asset('assets/images/Wind.png', fit: BoxFit.contain)),
                                 const SizedBox(width: 16),
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text('Дыхательная практика', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textPrimary)),
@@ -752,7 +843,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (mood != null && moodData.containsKey(mood)) {
                 bg = moodData[mood]['color'].withOpacity(0.3);
               } else if (hasNote) {
-                bg = warmWhite.withOpacity(0.5);
+                bg = warmWhite.withOpacity(0.8);
               }
             }
 

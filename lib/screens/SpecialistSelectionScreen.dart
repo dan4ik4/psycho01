@@ -4,13 +4,12 @@ import 'dart:convert';
 
 enum SortType { none, priceLow, priceHigh, rating }
 
-// Цветовая палитра SoulBuddy
 const Color kDeepPurple = Color(0xFFB0A6E8);
 const Color kAccentPurple = Color(0xFF7862D6);
-const Color kWarmWhite = Color(0xFFFFF9F2);
+const Color kWarmWhite = Color(0xFFF6F8FD);
 const Color kTextPrimary = Color(0xFF323045);
 const Color kTextSecondary = Color(0xFF706D8C);
-const Color kWeekendRed = Color(0xFFFF8A80); // Цвет для выходных дней
+const Color kWeekendRed = Color(0xFFFF8A80);
 
 class Specialist {
   final String id;
@@ -50,6 +49,9 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
   List<String> favoriteIds = [];
   SharedPreferences? _prefs;
 
+  // Текущая заявка пользователя
+  Map<String, dynamic>? myAssignment;
+
   final List<String> allCategories = ["Все", "❤️ Избранные", "Тревога", "Депрессия", "Семья", "Выгорание", "Психосоматика", "Карьера"];
 
   final List<Specialist> specialists = [
@@ -67,15 +69,40 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
     super.initState();
     filteredSpecialists = List.from(specialists);
     _searchController.addListener(_applyFilters);
-    _loadFavorites();
+    _loadData();
   }
 
-  Future<void> _loadFavorites() async {
+  Future<void> _loadData() async {
     _prefs = await SharedPreferences.getInstance();
     setState(() {
       favoriteIds = _prefs?.getStringList('favorite_psychologists') ?? [];
+
+      // Загрузка состояния заявок
+      final assignmentStr = _prefs?.getString('client_assignment');
+      if (assignmentStr != null) {
+        myAssignment = jsonDecode(assignmentStr);
+      } else {
+        myAssignment = null;
+      }
+
       _applyFilters();
     });
+  }
+
+  Future<void> _updateAssignmentStatus(String status, {String? commentField, String? commentValue}) async {
+    if (myAssignment != null) {
+      myAssignment!['status'] = status;
+      if (commentField != null && commentValue != null) {
+        myAssignment![commentField] = commentValue;
+      }
+      if (status == 'none') {
+        await _prefs?.remove('client_assignment');
+        myAssignment = null;
+      } else {
+        await _prefs?.setString('client_assignment', jsonEncode(myAssignment));
+      }
+      setState(() {});
+    }
   }
 
   void _toggleFavorite(String id) {
@@ -141,53 +168,59 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
           decoration: const BoxDecoration(
-              color: kWarmWhite,
+              color: kDeepPurple,
               borderRadius: BorderRadius.vertical(top: Radius.circular(30))
           ),
-          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 30),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton.icon(onPressed: () { _resetFilters(); Navigator.pop(context); }, icon: const Icon(Icons.refresh, color: kTextSecondary), label: const Text("Сбросить", style: TextStyle(color: kTextSecondary))),
-                    IconButton(icon: const Icon(Icons.check_circle, color: kAccentPurple, size: 35), onPressed: () => Navigator.pop(context))
-                  ],
-                ),
-                const Text("Сортировать", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    _sortChip("Дешевле", SortType.priceLow, setModalState),
-                    const SizedBox(width: 8),
-                    _sortChip("Дороже", SortType.priceHigh, setModalState),
-                    const SizedBox(width: 8),
-                    _sortChip("Рейтинг", SortType.rating, setModalState),
+          child: Container(
+            decoration: BoxDecoration(
+                color: kWarmWhite.withOpacity(0.8),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(30))
+            ),
+            padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 30),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton.icon(onPressed: () { _resetFilters(); Navigator.pop(context); }, icon: const Icon(Icons.refresh, color: kTextSecondary), label: const Text("Сбросить", style: TextStyle(color: kTextSecondary))),
+                      IconButton(icon: const Icon(Icons.check_circle, color: kAccentPurple, size: 35), onPressed: () => Navigator.pop(context))
+                    ],
+                  ),
+                  const Text("Сортировать", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      _sortChip("Дешевле", SortType.priceLow, setModalState),
+                      const SizedBox(width: 8),
+                      _sortChip("Дороже", SortType.priceHigh, setModalState),
+                      const SizedBox(width: 8),
+                      _sortChip("Рейтинг", SortType.rating, setModalState),
+                    ]),
+                  ),
+                  const SizedBox(height: 25),
+                  const Text("Категория", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Wrap(spacing: 8, runSpacing: 8, children: allCategories.map((c) => ChoiceChip(
+                      label: Text(c, style: TextStyle(color: selectedCategory == c ? kWarmWhite : kTextPrimary, fontWeight: selectedCategory == c ? FontWeight.bold : FontWeight.normal)),
+                      selected: selectedCategory == c,
+                      selectedColor: kAccentPurple,
+                      backgroundColor: kAccentPurple.withOpacity(0.1),
+                      onSelected: (v) { setModalState(() => selectedCategory = c); _applyFilters(); }
+                  )).toList()),
+                  const SizedBox(height: 25),
+                  const Text("Цена", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(child: _priceField("От", _minPriceController)),
+                    const SizedBox(width: 15),
+                    Expanded(child: _priceField("До", _maxPriceController))
                   ]),
-                ),
-                const SizedBox(height: 25),
-                const Text("Категория", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                Wrap(spacing: 8, runSpacing: 8, children: allCategories.map((c) => ChoiceChip(
-                    label: Text(c, style: TextStyle(color: selectedCategory == c ? kWarmWhite : kTextPrimary, fontWeight: selectedCategory == c ? FontWeight.bold : FontWeight.normal)),
-                    selected: selectedCategory == c,
-                    selectedColor: kAccentPurple,
-                    backgroundColor: kAccentPurple.withOpacity(0.1),
-                    onSelected: (v) { setModalState(() => selectedCategory = c); _applyFilters(); }
-                )).toList()),
-                const SizedBox(height: 25),
-                const Text("Цена", style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(child: _priceField("От", _minPriceController)),
-                  const SizedBox(width: 15),
-                  Expanded(child: _priceField("До", _maxPriceController))
-                ]),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -221,6 +254,121 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
     );
   }
 
+  Future<void> _showCancelOrFinishDialog(bool isCancel) async {
+    TextEditingController commentCtrl = TextEditingController();
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Container(
+          decoration: const BoxDecoration(color: kDeepPurple, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+          child: Container(
+            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
+            padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(isCancel ? "Отмена заявки" : "Завершение терапии", style: const TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Text(isCancel ? "Почему вы решили отменить заявку?" : "Оставьте финальный отзыв или комментарий:", style: const TextStyle(color: kTextSecondary)),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: commentCtrl,
+                  maxLines: 3,
+                  style: const TextStyle(color: kTextPrimary),
+                  decoration: InputDecoration(
+                    hintText: "Напишите здесь...",
+                    filled: true, fillColor: kDeepPurple.withOpacity(0.1),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: isCancel ? kWeekendRed : kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                    onPressed: () {
+                      if (isCancel) {
+                        _updateAssignmentStatus('none');
+                      } else {
+                        _updateAssignmentStatus('none');
+                        // В реальном API здесь был бы статус canceled или finished отправлен на сервер
+                      }
+                      Navigator.pop(ctx);
+                    },
+                    child: Text(isCancel ? "Отменить заявку" : "Завершить работу", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                )
+              ],
+            ),
+          ),
+        )
+    );
+  }
+
+  Widget _buildAssignmentStatusCard() {
+    if (myAssignment == null) return const SizedBox.shrink();
+
+    String status = myAssignment!['status'];
+    String name = myAssignment!['psychologistName'];
+
+    Color cardColor = kWarmWhite.withOpacity(0.8);
+    IconData icon = Icons.info_outline;
+    String title = "";
+    String sub = "";
+    Widget? actionBtn;
+
+    if (status == 'requested') {
+      icon = Icons.hourglass_empty;
+      title = "Ожидание ответа";
+      sub = "Заявка отправлена специалисту: $name";
+      actionBtn = TextButton(onPressed: () => _showCancelOrFinishDialog(true), child: const Text("Отменить", style: TextStyle(color: kWeekendRed)));
+    } else if (status == 'accepted') {
+      icon = Icons.check_circle_outline;
+      title = "Терапия активна";
+      sub = "Ваш психолог: $name";
+      actionBtn = TextButton(onPressed: () => _showCancelOrFinishDialog(false), child: const Text("Завершить", style: TextStyle(color: kTextSecondary)));
+    } else if (status == 'rejected') {
+      icon = Icons.cancel_outlined;
+      title = "Заявка отклонена";
+      sub = "Причина: ${myAssignment!['rejectComment'] ?? 'Нет мест'}";
+      actionBtn = TextButton(onPressed: () => _updateAssignmentStatus('none'), child: const Text("Скрыть", style: TextStyle(color: kTextPrimary)));
+    } else if (status == 'finished') {
+      icon = Icons.flag_circle_outlined;
+      title = "Работа завершена";
+      sub = "Психолог завершил терапию.";
+      actionBtn = TextButton(onPressed: () => _updateAssignmentStatus('none'), child: const Text("Ок", style: TextStyle(color: kTextPrimary)));
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: kAccentPurple.withOpacity(0.3), width: 1.5)
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: kAccentPurple, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16)),
+                Text(sub, style: const TextStyle(color: kTextSecondary, fontSize: 13)),
+              ],
+            ),
+          ),
+          if (actionBtn != null) actionBtn
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -245,7 +393,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                       Expanded(
                         child: Container(
                           height: 48,
-                          decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.3), borderRadius: BorderRadius.circular(15)),
+                          decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.8), borderRadius: BorderRadius.circular(15)),
                           child: TextField(
                             controller: _searchController,
                             focusNode: _searchFocusNode,
@@ -265,7 +413,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                         onTap: _showFilterSheet,
                         child: Container(
                             height: 48, width: 48,
-                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.3), borderRadius: BorderRadius.circular(15)),
+                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.8), borderRadius: BorderRadius.circular(15)),
                             child: const Icon(Icons.tune, color: kTextPrimary)
                         ),
                       ),
@@ -275,12 +423,19 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
               ),
             ),
           ],
-          body: filteredSpecialists.isEmpty
-              ? const Center(child: Text("Ничего не найдено", style: TextStyle(color: kTextSecondary)))
-              : ListView.builder(
-            padding: const EdgeInsets.only(top: 10, bottom: 100),
-            itemCount: filteredSpecialists.length,
-            itemBuilder: (context, index) => _buildDoctorCard(filteredSpecialists[index]),
+          body: Column(
+            children: [
+              _buildAssignmentStatusCard(),
+              Expanded(
+                child: filteredSpecialists.isEmpty
+                    ? const Center(child: Text("Ничего не найдено", style: TextStyle(color: kTextSecondary)))
+                    : ListView.builder(
+                  padding: const EdgeInsets.only(top: 8, bottom: 100),
+                  itemCount: filteredSpecialists.length,
+                  itemBuilder: (context, index) => _buildDoctorCard(filteredSpecialists[index]),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -300,14 +455,15 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
               onFavoriteToggle: () => _toggleFavorite(doc.id),
               onBooking: widget.onBookingConfirmed,
               onRatingUpdated: () => setState((){}),
+              onRequestAssignment: () => _loadData(), // Обновляем при возврате
             ))
-        ).then((_) => _loadFavorites()); // Синхронизируем состояние после возврата
+        ).then((_) => _loadData());
       },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: kWarmWhite.withOpacity(0.6),
+          color: kWarmWhite.withOpacity(0.8),
           borderRadius: BorderRadius.circular(24),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
         ),
@@ -319,15 +475,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(doc.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: kTextPrimary)),
-                      ),
-                      // Сердечко убрано отсюда, чтобы не дублироваться сверху
-                    ],
-                  ),
+                  Text(doc.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: kTextPrimary)),
                   Text(doc.spec, style: const TextStyle(color: kAccentPurple, fontSize: 13, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Row(
@@ -338,7 +486,6 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                           const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
                           Text(" ${doc.rating}", style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary)),
                           const SizedBox(width: 8),
-                          // Сердечко перенесено сюда — строго справа от рейтинга психолога
                           GestureDetector(
                             onTap: () => _toggleFavorite(doc.id),
                             child: Icon(
@@ -368,10 +515,11 @@ class SpecialistProfileScreen extends StatefulWidget {
   final VoidCallback onFavoriteToggle;
   final Function(Map<String, dynamic>)? onBooking;
   final VoidCallback? onRatingUpdated;
+  final VoidCallback? onRequestAssignment;
 
   const SpecialistProfileScreen({
     super.key, required this.specialist, required this.isFavorite,
-    required this.onFavoriteToggle, this.onBooking, this.onRatingUpdated
+    required this.onFavoriteToggle, this.onBooking, this.onRatingUpdated, this.onRequestAssignment
   });
 
   @override
@@ -385,6 +533,123 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
   void initState() {
     super.initState();
     _localIsFavorite = widget.isFavorite;
+  }
+
+  void _showRequestAssignmentDialog() {
+    TextEditingController requestCtrl = TextEditingController();
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Container(
+          decoration: const BoxDecoration(color: kDeepPurple, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+          child: Container(
+            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
+            padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Подача заявки", style: TextStyle(color: kTextPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                const Text("Напишите пару слов о том, что вас беспокоит. Это поможет специалисту подготовиться.", style: TextStyle(color: kTextSecondary, fontSize: 14)),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: requestCtrl,
+                  maxLines: 4,
+                  style: const TextStyle(color: kTextPrimary),
+                  decoration: InputDecoration(
+                    hintText: "Опишите ваш запрос...",
+                    filled: true, fillColor: kDeepPurple.withOpacity(0.1),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                    onPressed: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      // Создаем объект заявки
+                      final assignment = {
+                        "id": DateTime.now().millisecondsSinceEpoch.toString(),
+                        "clientName": "Тестовый Клиент", // В реальном АПИ берется из токена
+                        "psychologistId": widget.specialist.id,
+                        "psychologistName": widget.specialist.name,
+                        "status": "requested",
+                        "requestComment": requestCtrl.text.trim(),
+                      };
+                      await prefs.setString('client_assignment', jsonEncode(assignment));
+                      if (widget.onRequestAssignment != null) widget.onRequestAssignment!();
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Заявка успешно отправлена!")));
+                    },
+                    child: const Text("Отправить заявку", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                )
+              ],
+            ),
+          ),
+        )
+    );
+  }
+
+  // Окна в стиле AuthScreen
+  Future<bool?> _showStyledDialog(BuildContext context, String title, String content, String confirmText, Color confirmColor) {
+    return showGeneralDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (context, a1, a2) => Container(),
+        transitionBuilder: (context, a1, a2, child) {
+          return ScaleTransition(
+              scale: CurvedAnimation(parent: a1, curve: Curves.easeOutBack),
+              child: Dialog(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  child: Container(
+                      padding: const EdgeInsets.all(28),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(40),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFF6F8FD), Color(0xFFF1EAFF)],
+                        ),
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)],
+                      ),
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(title, style: const TextStyle(color: Color(0xFF323045), fontSize: 22, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                            const SizedBox(height: 15),
+                            Text(content, style: const TextStyle(color: Color(0xFF706D8C), fontSize: 16), textAlign: TextAlign.center),
+                            const SizedBox(height: 25),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Назад", style: TextStyle(color: Color(0xFF706D8C), fontSize: 16))),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: confirmColor,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    elevation: 4,
+                                  ),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: Text(confirmText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                ),
+                              ],
+                            )
+                          ]
+                      )
+                  )
+              )
+          );
+        }
+    );
   }
 
   void _showRatingDialog() {
@@ -475,13 +740,30 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
                             onTap: _showRatingDialog,
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                              decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.22), borderRadius: BorderRadius.circular(12)),
                               child: Row(children: [const Icon(Icons.star_rounded, color: Colors.amber, size: 20), const SizedBox(width: 4), Text(widget.specialist.rating.toString(), style: const TextStyle(fontWeight: FontWeight.bold, color: kWarmWhite))]),
                             ),
                           )
                         ],
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 20),
+
+                      // Кнопка подачи заявки на терапию (State Machine Flow)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.assignment_ind_outlined, color: kWarmWhite),
+                          label: const Text("Подать заявку на терапию", style: TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: kWarmWhite, width: 1.5),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                          ),
+                          onPressed: _showRequestAssignmentDialog,
+                        ),
+                      ),
+
+                      const SizedBox(height: 25),
                       const Text("О себе", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: kWarmWhite)),
                       const SizedBox(height: 12),
                       Text(widget.specialist.bio, style: TextStyle(color: kWarmWhite.withOpacity(0.7), fontSize: 16, height: 1.6)),
@@ -508,7 +790,7 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
                   setState(() {
                     _localIsFavorite = !_localIsFavorite;
                   });
-                  widget.onFavoriteToggle(); // Переключаем глобально через SharedPreferences
+                  widget.onFavoriteToggle();
                 },
               ),
             ),
@@ -535,7 +817,7 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
         barrierDismissible: true,
         barrierLabel: "Booking",
         pageBuilder: (context, anim1, anim2) {
-          return _BookingOverlay(spec: widget.specialist, onConfirmed: widget.onBooking);
+          return _BookingOverlay(spec: widget.specialist, onConfirmed: widget.onBooking, showStyledDialog: _showStyledDialog);
         }
     );
   }
@@ -544,7 +826,9 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
 class _BookingOverlay extends StatefulWidget {
   final Specialist spec;
   final Function(Map<String, dynamic>)? onConfirmed;
-  const _BookingOverlay({required this.spec, this.onConfirmed});
+  final Future<bool?> Function(BuildContext, String, String, String, Color) showStyledDialog;
+
+  const _BookingOverlay({required this.spec, this.onConfirmed, required this.showStyledDialog});
 
   @override
   State<_BookingOverlay> createState() => _BookingOverlayState();
@@ -663,7 +947,7 @@ class _BookingOverlayState extends State<_BookingOverlay> {
     }
     notes.add({
       'id': "booking_${DateTime.now().millisecondsSinceEpoch}",
-      'text': booking['specialist'], // Сохраняем имя, в которое уже вшито время ("Имя в HH:MM")
+      'text': "💠 ${booking['specialist']}",
       'time': booking['time'],
       'createdAt': DateTime.now().toIso8601String(),
       'type': 'visit'
@@ -803,7 +1087,7 @@ class _BookingOverlayState extends State<_BookingOverlay> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 decoration: BoxDecoration(
-                  color: kWarmWhite.withOpacity(0.5),
+                  color: kWarmWhite.withOpacity(0.8),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 padding: const EdgeInsets.all(12),
@@ -871,8 +1155,7 @@ class _BookingOverlayState extends State<_BookingOverlay> {
                         const Text("Запланированные визиты", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 12),
                         ...currentBookings.map((booking) {
-                          // По-прежнему очищаем строку для внутреннего календаря (убираем " в HH:MM")
-                          String title = booking['text'].toString().replaceAll("Запись к психологу: ", "");
+                          String title = booking['text'].toString().replaceAll("Запись к психологу: ", "").replaceAll("💠 ", "");
                           if (title.contains(" в ")) title = title.split(" в ")[0];
 
                           return Container(
@@ -880,7 +1163,7 @@ class _BookingOverlayState extends State<_BookingOverlay> {
                             width: double.infinity,
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: kWarmWhite.withOpacity(0.6),
+                              color: kWarmWhite.withOpacity(0.8),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
@@ -906,7 +1189,48 @@ class _BookingOverlayState extends State<_BookingOverlay> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.cancel_outlined, color: kWeekendRed, size: 28),
-                                  onPressed: () => _cancelBooking(selectedDateStr!, booking['id']),
+                                  onPressed: () async {
+                                    String timeStr = booking['time'].toString().split(" - ")[0];
+                                    List<String> timeParts = timeStr.split(":");
+                                    DateTime date = DateTime.parse(selectedDateStr!);
+                                    DateTime appointmentTime = DateTime(
+                                        date.year,
+                                        date.month,
+                                        date.day,
+                                        int.tryParse(timeParts[0]) ?? 0,
+                                        timeParts.length > 1 ? (int.tryParse(timeParts[1]) ?? 0) : 0
+                                    );
+
+                                    Duration diff = appointmentTime.difference(DateTime.now());
+                                    bool isPenalty = diff.inHours < 24;
+
+                                    // Окно 1: Подтверждение отмены
+                                    final confirmCancel = await widget.showStyledDialog(
+                                        context,
+                                        "Отмена записи",
+                                        "Вы действительно хотите отменить эту запись?",
+                                        "Да, отменить",
+                                        kWeekendRed
+                                    );
+
+                                    if (confirmCancel != true) return;
+
+                                    // Окно 2: Предупреждение о неустойке (если меньше 24 часов)
+                                    if (isPenalty) {
+                                      if (!context.mounted) return;
+                                      final confirmForfeit = await widget.showStyledDialog(
+                                          context,
+                                          "Внимание!",
+                                          "До сеанса осталось менее 24 часов. За отмену может взиматься неустойка. Вы уверены, что хотите отменить?",
+                                          "Согласен",
+                                          kWeekendRed
+                                      );
+
+                                      if (confirmForfeit != true) return;
+                                    }
+
+                                    _cancelBooking(selectedDateStr!, booking['id']);
+                                  },
                                 ),
                               ],
                             ),
@@ -963,7 +1287,6 @@ class _BookingOverlayState extends State<_BookingOverlay> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))
                     ),
                     onPressed: selectedTime != null ? () async {
-                      // Модифицируем поле specialist, добавляя фразу " в [время]" для главного экрана
                       final data = {
                         'specialist': "${widget.spec.name} в $selectedTime",
                         'date': _formatToYMD(_selectedDate!),

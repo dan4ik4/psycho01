@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main_navigation_screen.dart';
@@ -6,6 +7,8 @@ import 'main_navigation_screen.dart';
 enum AuthStep { login, registerEmail, registerOTP, registerProfile, forgotPasswordEmail, forgotPasswordOTP, resetPassword }
 
 class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
+
   @override
   _AuthScreenState createState() => _AuthScreenState();
 }
@@ -31,10 +34,25 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   // Обновленная цветовая палитра
   final Color deepPurple = const Color(0xFFB0A6E8);
   final Color accentPurple = const Color(0xFF7862D6);
-  final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color warmWhite = const Color(0xFFF6F8FD); // Обновленный цвет
   final Color textPrimary = const Color(0xFF323045);
   final Color textSecondary = const Color(0xFF706D8C);
   final Color weekendRed = const Color(0xFFFF8A80);
+
+  @override
+  void initState() {
+    super.initState();
+    _hideSystemUI();
+  }
+
+  void _hideSystemUI() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+    ));
+  }
 
   // Очистка всех полей ввода
   void _clearInputs() {
@@ -254,6 +272,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    _hideSystemUI();
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Container(
@@ -498,7 +517,7 @@ class _InfiniteDustOrbitState extends State<_InfiniteDustOrbit> with SingleTicke
                 child: Container(
                   width: p.size, height: p.size,
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle, color: Color(0xFFFFF9F2),
+                    shape: BoxShape.circle, color: const Color(0xFFF6F8FD),
                     boxShadow: [BoxShadow(color: widget.color, blurRadius: 4)],
                   ),
                 ),

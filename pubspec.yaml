@@ -72,6 +72,7 @@ flutter:
   assets:
     - .env
     - assets/images/lotus.png
+    - assets/images/Wind.png
     - assets/images/White_Lotus.png
     - assets/images/meditation.png
     - assets/lottie/excellent.json

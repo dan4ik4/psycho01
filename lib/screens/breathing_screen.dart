@@ -16,7 +16,7 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
   // Твоя неизменная палитра
   final Color deepPurple = const Color(0xFFB0A6E8);
   final Color accentPurple = const Color(0xFF7862D6);
-  final Color warmWhite = const Color(0xFFFFF9F2);
+  final Color warmWhite = const Color(0xFFF6F8FD); // Ghost / Soft Lavender White
   final Color textPrimary = const Color(0xFF323045);
   final Color textSecondary = const Color(0xFF706D8C);
   final Color weekendRed = const Color(0xFFFF8A80);
@@ -122,7 +122,7 @@ class _BreathingScreenState extends State<BreathingScreen> with TickerProviderSt
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   // ОТЗЕРКАЛЕНО: Плашка счетчика светлая полупрозрачная
-                  color: warmWhite.withOpacity(0.15),
+                  color: warmWhite.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(15),
                 ),
                 child: Text(
