@@ -7,12 +7,6 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASS: str
     JWT_SECRET: str = "SUPERSECRET"
-    
-    SMTP_HOST: str
-    SMTP_PORT: int = 587
-    SMTP_USER: str
-    SMTP_PASSWORD: str
-    SMTP_FROM: str
 
     REG_CODE_SECRET: str
     REG_CODE_TTL_MINUTES: int = 10
@@ -24,6 +18,9 @@ class Settings(BaseSettings):
     AGORA_APP_ID: str
     AGORA_APP_CERTIFICATE: str
     AGORA_JOIN_WINDOW_MINUTES: int = 5
+
+    RESEND_API_KEY: str
+    RESEND_FROM_EMAIL: str
 
     FRONTEND_URL: str = "http://localhost:3000"
 

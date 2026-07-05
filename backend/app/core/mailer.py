@@ -1,22 +1,18 @@
-from email.message import EmailMessage
+import asyncio
 
-import aiosmtplib
+import resend
 
 from app.core.settings import settings
 
 
 async def send_email(to: str, subject: str, text: str) -> None:
-    msg = EmailMessage()
-    msg["From"] = settings.SMTP_FROM
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(text)
+    resend.api_key = settings.RESEND_API_KEY
 
-    await aiosmtplib.send(
-        msg,
-        hostname=settings.SMTP_HOST,
-        port=settings.SMTP_PORT,
-        start_tls=True,
-        username=settings.SMTP_USER,
-        password=settings.SMTP_PASSWORD,
-    )
+    params: resend.Emails.SendParams = {
+        "from": settings.RESEND_FROM_EMAIL,
+        "to": [to],
+        "subject": subject,
+        "text": text,
+    }
+
+    await asyncio.to_thread(resend.Emails.send, params)
