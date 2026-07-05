@@ -15,9 +15,9 @@ pydantic-settings>=2.5
 
 python-dotenv>=1.0
 
-aiosmtplib==3.0.1
-
 APScheduler==3.10.4
 
 agora-token-builder==1.0.0
 psycopg2-binary>=2.9
+
+resend==2.32.2
