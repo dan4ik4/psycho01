@@ -6,6 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.settings import settings
 from app.routes import api
+from app.ai.routes import api as ai_api
 from app.jobs.scheduler import start_scheduler, stop_scheduler
 
 
@@ -40,6 +41,7 @@ app = FastAPI(
 
 # единая точка подключения всех маршрутов
 app.include_router(api)
+app.include_router(ai_api)
 
 # мидлварь для логов исключений
 app.add_middleware(BaseHTTPMiddleware, dispatch=_log_exceptions)

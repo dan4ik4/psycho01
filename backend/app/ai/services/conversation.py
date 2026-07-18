@@ -1,0 +1,113 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+import uuid
+
+from app.ai.models.conversation import AiConversation, AiConversationMode
+from app.crud.patient_assignment import get_active_assignments
+from app.models.user import User
+from app.ai.crud.conversation import (
+    create_ai_conversation,
+    get_ai_conversation_for_patient,
+    get_ai_conversations_for_patient,
+    rename_ai_conversation,
+)
+
+
+async def create_conversation(
+    db: AsyncSession,
+    user: User,
+    name: str | None,
+    mode: AiConversationMode,
+) -> AiConversation:
+    
+    if user.is_psychologist:
+        raise ValueError("Only patients can create AI conversations")
+    
+    conversation_name = (
+        name.strip()
+        if name is not None and name.strip()
+        else "Новый чат"
+    )
+
+    assignment_id = None
+
+    if mode == AiConversationMode.GUIDED:
+        active_assignments = await get_active_assignments(
+            db=db,
+            user_id=user.id,
+        )
+
+        patient_assignment = next(
+            (
+                assignment
+                for assignment in active_assignments
+                if assignment.patient_id == user.id
+            ),
+            None,
+        )
+
+        if patient_assignment is None:
+            raise ValueError(
+                "Guided conversation requires an active psychologist assignment"
+            )
+
+        assignment_id = patient_assignment.id
+
+    conversation = await create_ai_conversation(
+        session=db,
+        patient_id=user.id,
+        name=conversation_name,
+        mode=mode,
+        assignment_id=assignment_id,
+    )
+
+    await db.commit()
+    await db.refresh(conversation)
+
+    return conversation
+
+async def get_my_conversations(
+    db: AsyncSession,
+    user: User,
+) -> list[AiConversation]:
+    if user.is_psychologist:
+        raise ValueError("Only patients can access AI conversations")
+
+    return await get_ai_conversations_for_patient(
+        session=db,
+        patient_id=user.id,
+    )
+
+
+async def rename_conversation(
+    db: AsyncSession,
+    user: User,
+    conversation_id: uuid.UUID,
+    name: str,
+) -> AiConversation:
+    if user.is_psychologist:
+        raise ValueError("Only patients can rename AI conversations")
+
+    conversation = await get_ai_conversation_for_patient(
+        session=db,
+        conversation_id=conversation_id,
+        patient_id=user.id,
+    )
+
+    if conversation is None:
+        raise ValueError("Conversation not found")
+
+    normalized_name = name.strip()
+
+    if not normalized_name:
+        raise ValueError("Conversation name cannot be empty")
+
+    conversation = await rename_ai_conversation(
+        session=db,
+        conversation=conversation,
+        name=normalized_name,
+    )
+
+    await db.commit()
+    await db.refresh(conversation)
+
+    return conversation

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str
     RESEND_FROM_EMAIL: str
 
+    OPENAI_API_KEY: str
+    OPENAI_MODEL: str = "gpt-5-mini"
+
     FRONTEND_URL: str = "http://localhost:3000"
 
     DEBUG: bool = True

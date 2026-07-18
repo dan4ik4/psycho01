@@ -21,3 +21,5 @@ agora-token-builder==1.0.0
 psycopg2-binary>=2.9
 
 resend==2.32.2
+
+openai==2.45.0
