@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.ai.models.conversation import AiConversation, AiConversationMode
 
@@ -61,4 +62,23 @@ async def rename_ai_conversation(
     await session.flush()
 
     return conversation
+
+async def get_ai_conversation_with_messages_for_patient(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    patient_id: uuid.UUID,
+) -> AiConversation | None:
+    stmt = (
+        select(AiConversation)
+        .options(
+            selectinload(AiConversation.messages),
+        )
+        .where(
+            AiConversation.id == conversation_id,
+            AiConversation.patient_id == patient_id,
+        )
+    )
+
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 

@@ -8,6 +8,7 @@ from app.ai.crud.conversation import (
     create_ai_conversation,
     get_ai_conversation_for_patient,
     get_ai_conversations_for_patient,
+    get_ai_conversation_with_messages_for_patient,
     rename_ai_conversation,
 )
 
@@ -77,7 +78,6 @@ async def get_my_conversations(
         patient_id=user.id,
     )
 
-
 async def rename_conversation(
     db: AsyncSession,
     user: User,
@@ -111,3 +111,27 @@ async def rename_conversation(
     await db.refresh(conversation)
 
     return conversation
+
+async def get_conversation_with_messages(
+    db: AsyncSession,
+    user: User,
+    conversation_id: uuid.UUID,
+) -> AiConversation:
+    if user.is_psychologist:
+        raise ValueError(
+            "Only patients can access AI conversations"
+        )
+
+    conversation = (
+        await get_ai_conversation_with_messages_for_patient(
+            session=db,
+            conversation_id=conversation_id,
+            patient_id=user.id,
+        )
+    )
+
+    if conversation is None:
+        raise ValueError("Conversation not found")
+
+    return conversation
+

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str
     OPENAI_MODEL: str = "gpt-5-mini"
+    OPENAI_MAX_OUTPUT_TOKENS: int = 800
+
+    AI_MOCK_MODE: bool = False
 
     FRONTEND_URL: str = "http://localhost:3000"
 

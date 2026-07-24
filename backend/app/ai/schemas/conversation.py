@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.ai.models.conversation import AiConversationMode
+from app.ai.schemas.message import AiMessageOut
 
 class AiConversationRename(BaseModel):
     name: str = Field(
@@ -29,3 +30,6 @@ class AiConversationOut(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+class AiConversationDetailOut(AiConversationOut):
+    messages: list[AiMessageOut]

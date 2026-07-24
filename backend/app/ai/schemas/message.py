@@ -23,3 +23,7 @@ class AiMessageOut(BaseModel):
     model_config = {
         "from_attributes": True,
     }
+
+class AiMessageExchangeOut(BaseModel):
+    user_message: AiMessageOut
+    assistant_message: AiMessageOut

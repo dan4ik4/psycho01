@@ -5,11 +5,13 @@ import uuid
 from app.ai.schemas.conversation import (
     AiConversationCreate,
     AiConversationOut,
+    AiConversationDetailOut,
     AiConversationRename,
 )
 from app.ai.services.conversation import (
     create_conversation,
     get_my_conversations,
+    get_conversation_with_messages,
     rename_conversation,
 )
 from app.auth.deps import current_active_user
@@ -91,3 +93,26 @@ async def rename_ai_conversation_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(error),
         ) from error
+    
+@router.get(
+    "/{conversation_id}",
+    response_model=AiConversationDetailOut,
+)
+async def get_ai_conversation_endpoint(
+    conversation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
+) -> AiConversationDetailOut:
+    try:
+        return await get_conversation_with_messages(
+            db=db,
+            user=user,
+            conversation_id=conversation_id,
+        )
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+    
