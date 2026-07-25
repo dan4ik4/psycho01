@@ -43,7 +43,10 @@ async def get_latest_assignment_event(
     result = await db.execute(
         select(PatientAssignmentEvent)
         .where(PatientAssignmentEvent.assignment_id == assignment_id)
-        .order_by(PatientAssignmentEvent.created_at.desc())
+        .order_by(
+            PatientAssignmentEvent.created_at.desc(),
+            PatientAssignmentEvent.id.desc(),
+        )
         .limit(1)
     )
 

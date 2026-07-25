@@ -21,10 +21,11 @@ async def rate_psychologist_service(
     rating: int,
     comment: str | None,
 ):
-    if patient.id == psychologist_id:
+    
+    if patient.is_psychologist:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot rate yourself",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only patients can rate psychologists",
         )
 
     result = await db.execute(
@@ -32,7 +33,11 @@ async def rate_psychologist_service(
     )
     psychologist = result.scalar_one_or_none()
 
-    if not psychologist or not psychologist.is_psychologist:
+    if (
+        psychologist is None
+        or not psychologist.is_psychologist
+        or not psychologist.is_active
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Psychologist not found",
