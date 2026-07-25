@@ -25,11 +25,12 @@ async def request_assignment(
         user_id=psychologist_id,
     )
 
-    if psychologist is None:
+    if (
+        psychologist is None
+        or not psychologist.is_psychologist
+        or not psychologist.is_active
+    ):
         raise ValueError("Psychologist not found")
-
-    if not psychologist.is_psychologist:
-        raise ValueError("Selected user is not a psychologist")
     
     if not comment.strip():
         raise ValueError("Comment is required")

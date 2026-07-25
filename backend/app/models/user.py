@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import Boolean, Date, Integer, String, Text
+from sqlalchemy import Boolean, Date, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,3 +25,15 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     license_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     experience_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    average_rating: Mapped[float | None] = mapped_column(
+        Numeric(3, 2),
+        nullable=True,
+    )
+
+    ratings_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )

@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.psychologist_rating import PsychologistRating
+from app.models.user import User
 
 
 async def get_rating_by_patient_and_psychologist(
@@ -40,8 +41,7 @@ async def upsert_psychologist_rating(
         existing_rating.comment = comment
 
         db.add(existing_rating)
-        await db.commit()
-        await db.refresh(existing_rating)
+        await db.flush()
 
         return existing_rating
 
@@ -53,7 +53,7 @@ async def upsert_psychologist_rating(
     )
 
     db.add(new_rating)
-    await db.commit()
+    await db.flush()
     await db.refresh(new_rating)
 
     return new_rating
@@ -64,10 +64,42 @@ async def get_psychologist_rating_summary(
     *,
     psychologist_id: uuid.UUID,
 ) -> tuple[float | None, int]:
+    result = await db.execute(
+        select(
+            User.average_rating,
+            User.ratings_count,
+        ).where(
+            User.id == psychologist_id,
+            User.is_psychologist.is_(True),
+        )
+    )
+
+    rating_data = result.one_or_none()
+
+    if rating_data is None:
+        return None, 0
+
+    average_rating, ratings_count = rating_data
+
+    return (
+        float(average_rating) if average_rating is not None else None,
+        ratings_count,
+    )
+
+async def recalculate_psychologist_rating_cache(
+    db: AsyncSession,
+    *,
+    psychologist: User,
+) -> None:
     last_50_ratings_subquery = (
         select(PsychologistRating.rating)
-        .where(PsychologistRating.psychologist_id == psychologist_id)
-        .order_by(PsychologistRating.updated_at.desc())
+        .where(
+            PsychologistRating.psychologist_id == psychologist.id,
+        )
+        .order_by(
+            PsychologistRating.updated_at.desc(),
+            PsychologistRating.id.desc(),
+        )
         .limit(50)
         .subquery()
     )
@@ -81,4 +113,12 @@ async def get_psychologist_rating_summary(
 
     average_rating, ratings_count = result.one()
 
-    return average_rating, ratings_count
+    psychologist.average_rating = (
+        round(float(average_rating), 2)
+        if average_rating is not None
+        else None
+    )
+    psychologist.ratings_count = ratings_count
+
+    db.add(psychologist)
+    await db.flush()

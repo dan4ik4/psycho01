@@ -1,10 +1,8 @@
 import uuid
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
-from sqlalchemy import func
 from typing import Literal
+from sqlalchemy import func, select
 
 from app.models.patient_assignment import PatientAssignment
 from app.models.patient_assignment_event import (
@@ -93,24 +91,28 @@ async def get_assignments_by_latest_event(
     user_id: uuid.UUID,
     event_types: list[PatientAssignmentEventType],
     role_filter: Literal["patient", "psychologist"] | None = None,
-) -> list[PatientAssignment]:
-    latest_event_subquery = (
+) -> list[tuple[PatientAssignment, PatientAssignmentEvent]]:
+    ranked_events_subquery = (
         select(
-            PatientAssignmentEvent.assignment_id,
-            func.max(PatientAssignmentEvent.created_at).label("max_created_at"),
+            PatientAssignmentEvent.id.label("event_id"),
+            PatientAssignmentEvent.assignment_id.label("assignment_id"),
+            func.row_number()
+            .over(
+                partition_by=PatientAssignmentEvent.assignment_id,
+                order_by=(
+                    PatientAssignmentEvent.created_at.desc(),
+                    PatientAssignmentEvent.id.desc(),
+                ),
+            )
+            .label("event_position"),
         )
-        .group_by(PatientAssignmentEvent.assignment_id)
         .subquery()
     )
 
-    latest_event = aliased(PatientAssignmentEvent)
-
     if role_filter == "psychologist":
         user_filter = PatientAssignment.psychologist_id == user_id
-
     elif role_filter == "patient":
         user_filter = PatientAssignment.patient_id == user_id
-
     else:
         user_filter = (
             (PatientAssignment.patient_id == user_id)
@@ -118,44 +120,56 @@ async def get_assignments_by_latest_event(
         )
 
     result = await db.execute(
-        select(PatientAssignment)
-        .join(
-            latest_event_subquery,
-            PatientAssignment.id == latest_event_subquery.c.assignment_id,
+        select(
+            PatientAssignment,
+            PatientAssignmentEvent,
         )
         .join(
-            latest_event,
-            (latest_event.assignment_id == latest_event_subquery.c.assignment_id)
-            & (
-                latest_event.created_at
-                == latest_event_subquery.c.max_created_at
-            ),
+            ranked_events_subquery,
+            PatientAssignment.id
+            == ranked_events_subquery.c.assignment_id,
+        )
+        .join(
+            PatientAssignmentEvent,
+            PatientAssignmentEvent.id
+            == ranked_events_subquery.c.event_id,
         )
         .where(
+            ranked_events_subquery.c.event_position == 1,
             user_filter,
-            latest_event.event_type.in_(event_types),
+            PatientAssignmentEvent.event_type.in_(event_types),
         )
-        .order_by(latest_event.created_at.desc())
+        .order_by(
+            PatientAssignmentEvent.created_at.desc(),
+            PatientAssignmentEvent.id.desc(),
+        )
     )
 
-    return list(result.scalars().all())
+    return [
+        (assignment, latest_event)
+        for assignment, latest_event in result.all()
+    ]
 
 
 async def get_finished_assignments(
     db: AsyncSession,
     user_id: uuid.UUID,
-) -> list[PatientAssignment]:
+) -> list[tuple[PatientAssignment, PatientAssignmentEvent]]:
     return await get_assignments_by_latest_event(
         db=db,
         user_id=user_id,
-        event_types=[PatientAssignmentEventType.FINISHED],
+        event_types=[
+            PatientAssignmentEventType.FINISHED,
+            PatientAssignmentEventType.REJECTED,
+            PatientAssignmentEventType.CANCELLED,
+        ],
     )
 
 
 async def get_incoming_assignment_requests(
     db: AsyncSession,
     psychologist_id: uuid.UUID,
-) -> list[PatientAssignment]:
+) -> list[tuple[PatientAssignment, PatientAssignmentEvent]]:
     return await get_assignments_by_latest_event(
         db=db,
         user_id=psychologist_id,
@@ -166,12 +180,13 @@ async def get_incoming_assignment_requests(
 
 async def get_active_assignments(
     db: AsyncSession,
-    user_id: uuid.UUID,
-) -> list[PatientAssignment]:
+    psychologist_id: uuid.UUID,
+) -> list[tuple[PatientAssignment, PatientAssignmentEvent]]:
     return await get_assignments_by_latest_event(
         db=db,
-        user_id=user_id,
+        user_id=psychologist_id,
         event_types=[PatientAssignmentEventType.ACCEPTED],
+        role_filter="psychologist",
     )
 
 
@@ -189,49 +204,26 @@ async def get_active_or_pending_patient_assignment(
         role_filter="patient",
     )
 
-    return assignments[0] if assignments else None
+    if not assignments:
+        return None
 
-async def get_assignments_with_latest_events(
-    db: AsyncSession,
-    assignments: list[PatientAssignment],
-) -> list[dict]:
-    result = []
+    assignment, _ = assignments[0]
 
-    for assignment in assignments:
-        latest_event = await get_latest_assignment_event(
-            db=db,
-            assignment_id=assignment.id,
-        )
+    return assignment
 
-        result.append(
-            {
-                "id": assignment.id,
-                "patient_id": assignment.patient_id,
-                "psychologist_id": assignment.psychologist_id,
-                "latest_event": latest_event,
-            }
-        )
-
-    return result
 
 async def get_latest_patient_assignment(
     db: AsyncSession,
     patient_id: uuid.UUID,
-) -> PatientAssignment | None:
+) -> tuple[PatientAssignment, PatientAssignmentEvent] | None:
     assignments = await get_assignments_by_latest_event(
         db=db,
         user_id=patient_id,
         event_types=[
             PatientAssignmentEventType.REQUESTED,
             PatientAssignmentEventType.ACCEPTED,
-            PatientAssignmentEventType.REJECTED,
-            PatientAssignmentEventType.FINISHED,
-            PatientAssignmentEventType.CANCELLED,
         ],
         role_filter="patient",
     )
 
-    if not assignments:
-        return None
-
-    return assignments[0]
+    return assignments[0] if assignments else None

@@ -20,7 +20,6 @@ from app.services.patient_assignment import (
     cancel_assignment,
 )
 from app.crud.patient_assignment import (
-    get_assignments_with_latest_events,
     get_latest_patient_assignment,
     get_incoming_assignment_requests,
     get_active_assignments,
@@ -32,6 +31,17 @@ router = APIRouter(
     prefix="/patient-assignments",
     tags=["Patient assignments"],
 )
+
+def build_assignment_with_event_response(
+    assignment,
+    latest_event,
+) -> PatientAssignmentWithLatestEventOut:
+    return PatientAssignmentWithLatestEventOut(
+        id=assignment.id,
+        patient_id=assignment.patient_id,
+        psychologist_id=assignment.psychologist_id,
+        latest_event=latest_event,
+    )
 
 @router.post(
     "/request",
@@ -180,23 +190,24 @@ async def get_my_assignment_endpoint(
     if user.is_psychologist:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Psychologist cannot request assignment",
+            detail="Only patients can access this endpoint",
         )
-       
-    assignment = await get_latest_patient_assignment(
+
+    assignment_data = await get_latest_patient_assignment(
         db=db,
         patient_id=user.id,
     )
 
-    if assignment is None:
+    if assignment_data is None:
         return None
 
-    result = await get_assignments_with_latest_events(
-        db=db,
-        assignments=[assignment],
+    assignment, latest_event = assignment_data
+
+    return build_assignment_with_event_response(
+        assignment=assignment,
+        latest_event=latest_event,
     )
 
-    return result[0]
 
 @router.get(
     "/incoming",
@@ -209,17 +220,22 @@ async def get_incoming_assignments_endpoint(
     if not user.is_psychologist:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Patient cannot view incoming assignments",
+            detail="Only psychologists can access incoming assignments",
         )
+
     assignments = await get_incoming_assignment_requests(
         db=db,
         psychologist_id=user.id,
     )
 
-    return await get_assignments_with_latest_events(
-        db=db,
-        assignments=assignments,
-    )
+    return [
+        build_assignment_with_event_response(
+            assignment=assignment,
+            latest_event=latest_event,
+        )
+        for assignment, latest_event in assignments
+    ]
+
 
 @router.get(
     "/active",
@@ -229,15 +245,25 @@ async def get_active_assignments_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
+    if not user.is_psychologist:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only psychologists can access active assignments",
+        )
+
     assignments = await get_active_assignments(
         db=db,
-        user_id=user.id,
+        psychologist_id=user.id,
     )
 
-    return await get_assignments_with_latest_events(
-        db=db,
-        assignments=assignments,
-    )
+    return [
+        build_assignment_with_event_response(
+            assignment=assignment,
+            latest_event=latest_event,
+        )
+        for assignment, latest_event in assignments
+    ]
+
 
 @router.get(
     "/finished",
@@ -252,7 +278,10 @@ async def get_finished_assignments_endpoint(
         user_id=user.id,
     )
 
-    return await get_assignments_with_latest_events(
-        db=db,
-        assignments=assignments,
-    )
+    return [
+        build_assignment_with_event_response(
+            assignment=assignment,
+            latest_event=latest_event,
+        )
+        for assignment, latest_event in assignments
+    ]

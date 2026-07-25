@@ -4,7 +4,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.psychologist_rating import upsert_psychologist_rating, get_psychologist_rating_summary
+from app.crud.psychologist_rating import (
+    get_psychologist_rating_summary,
+    recalculate_psychologist_rating_cache,
+    upsert_psychologist_rating,
+)
 from app.models.user import User
 from app.schemas.psychologist_rating import PsychologistRatingSummary
 
@@ -34,13 +38,23 @@ async def rate_psychologist_service(
             detail="Psychologist not found",
         )
 
-    return await upsert_psychologist_rating(
+    rating_record = await upsert_psychologist_rating(
         db,
         patient_id=patient.id,
         psychologist_id=psychologist_id,
         rating=rating,
         comment=comment,
     )
+
+    await recalculate_psychologist_rating_cache(
+        db,
+        psychologist=psychologist,
+    )
+
+    await db.commit()
+    await db.refresh(rating_record)
+
+    return rating_record
 
 
 async def get_psychologist_rating_summary_service(
