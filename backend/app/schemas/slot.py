@@ -9,6 +9,14 @@ class SlotCreate(BaseModel):
     start_at: datetime
     end_at: datetime
 
+    @field_validator("start_at", "end_at")
+    @classmethod
+    def datetime_must_have_timezone(cls, value: datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Datetime must include timezone")
+
+        return value
+
     @field_validator("end_at")
     @classmethod
     def end_after_start(cls, end_at: datetime, info):

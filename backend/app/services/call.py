@@ -41,15 +41,16 @@ async def join_call(
         slot_id=slot.id,
     )
 
-    if user.id == slot.psychologist_id:
-        pass
-    elif (
-        latest_slot_event is not None
-        and latest_slot_event.event_type == SlotEventType.BOOKED
-        and latest_slot_event.patient_id == user.id
+    if (
+        latest_slot_event is None
+        or latest_slot_event.event_type != SlotEventType.BOOKED
     ):
-        pass
-    else:
+        raise ValueError("Slot is not booked")
+
+    if (
+        user.id != slot.psychologist_id
+        and user.id != latest_slot_event.patient_id
+    ):
         raise ValueError("You are not allowed to join this call")
 
     now = datetime.now(timezone.utc)

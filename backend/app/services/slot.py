@@ -2,19 +2,20 @@ from datetime import datetime, timezone, timedelta
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.crud.slot import (
     create_slot as create_slot_crud,
     create_slot_event,
-    get_slots_by_psychologist,
     get_latest_slot_event,
     get_slot_by_id,
     get_slots_with_latest_events,
+    get_slot_history_events,
 )
 from app.models.slot import Slot
 from app.models.slot_event import SlotEventType, SlotEvent
 from app.models.user import User
-from app.crud.patient_assignment import get_latest_patient_assignment, get_latest_assignment_event
+from app.crud.patient_assignment import get_latest_patient_assignment
 from app.models.patient_assignment_event import PatientAssignmentEventType
 
 #psychologist
@@ -26,6 +27,12 @@ async def create_slot(
 ) -> Slot:
     if not user.is_psychologist:
         raise ValueError("Only psychologists can create slots")
+    
+    await db.execute(
+        select(User)
+        .where(User.id == user.id)
+        .with_for_update()
+    )
     
     now = datetime.now(timezone.utc)
 
@@ -153,23 +160,17 @@ async def get_available_slots(
     if user.is_psychologist:
         raise ValueError("Only patients can view available slots")
 
-    assignment = await get_latest_patient_assignment(
+    assignment_data = await get_latest_patient_assignment(
         db=db,
         patient_id=user.id,
     )
 
-    if assignment is None:
+    if assignment_data is None:
         raise ValueError("Patient has no assignment")
 
-    latest_assignment_event = await get_latest_assignment_event(
-        db=db,
-        assignment_id=assignment.id,
-    )
+    assignment, latest_assignment_event = assignment_data
 
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type != PatientAssignmentEventType.ACCEPTED
-    ):
+    if latest_assignment_event.event_type != PatientAssignmentEventType.ACCEPTED:
         raise ValueError("Patient has no active assignment")
 
     slots_with_events = await get_slots_with_latest_events(
@@ -200,7 +201,11 @@ async def book_slot(
     if user.is_psychologist:
         raise ValueError("Only patients can book slots")
 
-    slot = await get_slot_by_id(db=db, slot_id=slot_id)
+    slot = await get_slot_by_id(
+        db=db,
+        slot_id=slot_id,
+        for_update=True
+    )
 
     if slot is None:
         raise ValueError("Slot not found")
@@ -216,15 +221,17 @@ async def book_slot(
     if assignment is None:
         raise ValueError("Patient has no assignment")
 
-    latest_assignment_event = await get_latest_assignment_event(
+    assignment_data = await get_latest_patient_assignment(
         db=db,
-        assignment_id=assignment.id,
+        patient_id=user.id,
     )
 
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type != PatientAssignmentEventType.ACCEPTED
-    ):
+    if assignment_data is None:
+        raise ValueError("Patient has no assignment")
+
+    assignment, latest_assignment_event = assignment_data
+
+    if latest_assignment_event.event_type != PatientAssignmentEventType.ACCEPTED:
         raise ValueError("Patient has no active assignment")
 
     if slot.psychologist_id != assignment.psychologist_id:
@@ -263,9 +270,6 @@ async def cancel_slot_booking(
     user: User,
     comment: str | None = None,
 ) -> Slot:
-    if user.is_psychologist:
-        raise ValueError("Only patients can cancel bookings")
-
     slot = await get_slot_by_id(
         db=db,
         slot_id=slot_id,
@@ -273,6 +277,9 @@ async def cancel_slot_booking(
 
     if slot is None:
         raise ValueError("Slot not found")
+    
+    if slot.start_at <= datetime.now(timezone.utc):
+        raise ValueError("Cannot cancel booking after lesson has started")
 
     latest_event = await get_latest_slot_event(
         db=db,
@@ -282,14 +289,21 @@ async def cancel_slot_booking(
     if latest_event is None or latest_event.event_type != SlotEventType.BOOKED:
         raise ValueError("Slot is not booked")
 
-    if latest_event.patient_id != user.id:
-        raise ValueError("You can cancel only your own booking")
+    if user.is_psychologist:
+        if slot.psychologist_id != user.id:
+            raise ValueError("You can cancel only your own slot")
+
+        if not comment:
+            raise ValueError("Comment is required for psychologist cancellation")
+    else:
+        if latest_event.patient_id != user.id:
+            raise ValueError("You can cancel only your own booking")
 
     await create_slot_event(
         db=db,
         slot_id=slot_id,
         event_type=SlotEventType.CANCELLED,
-        patient_id=user.id,
+        patient_id=latest_event.patient_id,
         performed_by_id=user.id,
         comment=comment,
     )
@@ -314,7 +328,7 @@ async def get_my_booked_slots(
         (slot, latest_event)
         for slot, latest_event in slots_with_events
         if (
-            slot.start_at > now
+            slot.end_at > now
             and latest_event is not None
             and latest_event.event_type == SlotEventType.BOOKED
             and latest_event.patient_id == user.id
@@ -324,34 +338,10 @@ async def get_my_booked_slots(
 async def get_slot_history(
     db: AsyncSession,
     user: User,
-) -> list[tuple[Slot, SlotEvent | None]]:
-    slots_with_events = await get_slots_with_latest_events(db=db)
-
-    history_events = (
-        SlotEventType.CANCELLED,
-        SlotEventType.COMPLETED,
-        SlotEventType.MISSED,
-        SlotEventType.REMOVED,
+) -> list[tuple[Slot, SlotEvent]]:
+    return await get_slot_history_events(
+        db=db,
+        user_id=user.id,
+        is_psychologist=user.is_psychologist,
     )
-
-    if user.is_psychologist:
-        return [
-            (slot, latest_event)
-            for slot, latest_event in slots_with_events
-            if (
-                slot.psychologist_id == user.id
-                and latest_event is not None
-                and latest_event.event_type in history_events
-            )
-        ]
-
-    return [
-        (slot, latest_event)
-        for slot, latest_event in slots_with_events
-        if (
-            latest_event is not None
-            and latest_event.patient_id == user.id
-            and latest_event.event_type in history_events
-        )
-    ]
 
