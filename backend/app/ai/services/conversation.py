@@ -12,6 +12,11 @@ from app.ai.crud.conversation import (
     get_ai_conversation_with_messages_for_patient,
     rename_ai_conversation,
 )
+from app.ai.crud.ai_care_plan import (
+    get_ai_care_plan_by_assignment_id,
+    get_latest_ai_care_plan_event,
+)
+from app.ai.models.ai_care_plan import AiCarePlanEventType
 
 
 async def create_conversation(
@@ -53,6 +58,30 @@ async def create_conversation(
         ):
             raise ValueError(
                 "Guided conversation requires an active psychologist assignment"
+            )
+
+        care_plan = await get_ai_care_plan_by_assignment_id(
+            session=db,
+            assignment_id=assignment.id,
+        )
+
+        if care_plan is None:
+            raise ValueError(
+                "Guided conversation requires an active care plan"
+            )
+
+        latest_care_plan_event = await get_latest_ai_care_plan_event(
+            session=db,
+            care_plan_id=care_plan.id,
+        )
+
+        if (
+            latest_care_plan_event is None
+            or latest_care_plan_event.event_type
+            != AiCarePlanEventType.ACTIVATED
+        ):
+            raise ValueError(
+                "Guided conversation requires an active care plan"
             )
 
         assignment_id = assignment.id

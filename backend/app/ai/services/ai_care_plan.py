@@ -26,13 +26,11 @@ from app.models.patient_assignment_event import (
 )
 
 
-async def create_care_plan(
+async def _validate_active_assignment_for_psychologist(
     db: AsyncSession,
     assignment_id: uuid.UUID,
     psychologist_id: uuid.UUID,
-    instructions_for_ai: str,
-    patient_recommendations: str | None,
-) -> tuple[AiCarePlan, AiCarePlanVersion]:
+) -> None:
     assignment = await get_assignment_by_id(
         db=db,
         assignment_id=assignment_id,
@@ -43,20 +41,33 @@ async def create_care_plan(
 
     if assignment.psychologist_id != psychologist_id:
         raise ValueError(
-            "You are not allowed to create a care plan for this assignment"
+            "You are not allowed to manage this care plan"
         )
 
-    latest_assignment_event = await get_latest_assignment_event(
+    latest_event = await get_latest_assignment_event(
         db=db,
         assignment_id=assignment_id,
     )
 
     if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type
+        latest_event is None
+        or latest_event.event_type
         != PatientAssignmentEventType.ACCEPTED
     ):
         raise ValueError("Assignment is not active")
+
+async def create_care_plan(
+    db: AsyncSession,
+    assignment_id: uuid.UUID,
+    psychologist_id: uuid.UUID,
+    instructions_for_ai: str,
+    patient_recommendations: str | None,
+) -> tuple[AiCarePlan, AiCarePlanVersion]:
+    await _validate_active_assignment_for_psychologist(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=psychologist_id,
+    )
 
     existing_care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
@@ -96,30 +107,11 @@ async def activate_care_plan_version(
     version_id: uuid.UUID,
     comment: str | None = None,
 ) -> AiCarePlanEvent:
-    assignment = await get_assignment_by_id(
+    await _validate_active_assignment_for_psychologist(
         db=db,
         assignment_id=assignment_id,
+        psychologist_id=psychologist_id,
     )
-
-    if assignment is None:
-        raise ValueError("Assignment not found")
-
-    if assignment.psychologist_id != psychologist_id:
-        raise ValueError(
-            "You are not allowed to activate this care plan"
-        )
-
-    latest_assignment_event = await get_latest_assignment_event(
-        db=db,
-        assignment_id=assignment_id,
-    )
-
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type
-        != PatientAssignmentEventType.ACCEPTED
-    ):
-        raise ValueError("Assignment is not active")
 
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
@@ -156,7 +148,9 @@ async def activate_care_plan_version(
         == AiCarePlanEventType.ACTIVATED
         and latest_care_plan_event.version_id == version.id
     ):
-        raise ValueError("Care plan version is already active")
+        raise ValueError(
+            "Care plan version is already active"
+        )
 
     event = await create_ai_care_plan_event(
         session=db,
@@ -179,30 +173,11 @@ async def create_new_care_plan_version(
     instructions_for_ai: str,
     patient_recommendations: str | None,
 ) -> AiCarePlanVersion:
-    assignment = await get_assignment_by_id(
+    await _validate_active_assignment_for_psychologist(
         db=db,
         assignment_id=assignment_id,
+        psychologist_id=psychologist_id,
     )
-
-    if assignment is None:
-        raise ValueError("Assignment not found")
-
-    if assignment.psychologist_id != psychologist_id:
-        raise ValueError(
-            "You are not allowed to update this care plan"
-        )
-
-    latest_assignment_event = await get_latest_assignment_event(
-        db=db,
-        assignment_id=assignment_id,
-    )
-
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type
-        != PatientAssignmentEventType.ACCEPTED
-    ):
-        raise ValueError("Assignment is not active")
 
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
@@ -252,30 +227,11 @@ async def pause_care_plan(
     psychologist_id: uuid.UUID,
     comment: str | None = None,
 ) -> AiCarePlanEvent:
-    assignment = await get_assignment_by_id(
+    await _validate_active_assignment_for_psychologist(
         db=db,
         assignment_id=assignment_id,
+        psychologist_id=psychologist_id,
     )
-
-    if assignment is None:
-        raise ValueError("Assignment not found")
-
-    if assignment.psychologist_id != psychologist_id:
-        raise ValueError(
-            "You are not allowed to pause this care plan"
-        )
-
-    latest_assignment_event = await get_latest_assignment_event(
-        db=db,
-        assignment_id=assignment_id,
-    )
-
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type
-        != PatientAssignmentEventType.ACCEPTED
-    ):
-        raise ValueError("Assignment is not active")
 
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
@@ -344,18 +300,6 @@ async def complete_care_plan(
             "You are not allowed to complete this care plan"
         )
 
-    latest_assignment_event = await get_latest_assignment_event(
-        db=db,
-        assignment_id=assignment_id,
-    )
-
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type
-        != PatientAssignmentEventType.ACCEPTED
-    ):
-        raise ValueError("Assignment is not active")
-
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
         assignment_id=assignment_id,
@@ -370,13 +314,17 @@ async def complete_care_plan(
     )
 
     if latest_care_plan_event is None:
-        raise ValueError("Care plan has not been activated")
+        raise ValueError(
+            "Care plan has not been activated"
+        )
 
     if (
         latest_care_plan_event.event_type
         == AiCarePlanEventType.COMPLETED
     ):
-        raise ValueError("Care plan is already completed")
+        raise ValueError(
+            "Care plan is already completed"
+        )
 
     event = await create_ai_care_plan_event(
         session=db,
@@ -428,7 +376,9 @@ async def get_patient_care_plan(
     )
 
     if latest_event is None:
-        raise ValueError("Care plan is not available yet")
+        raise ValueError(
+            "Care plan is not available yet"
+        )
 
     version = await get_ai_care_plan_version(
         session=db,
@@ -437,7 +387,9 @@ async def get_patient_care_plan(
     )
 
     if version is None:
-        raise ValueError("Care plan version not found")
+        raise ValueError(
+            "Care plan version not found"
+        )
 
     return care_plan, version, latest_event
 
@@ -477,7 +429,9 @@ async def get_psychologist_care_plan(
     )
 
     if latest_version is None:
-        raise ValueError("Care plan has no versions")
+        raise ValueError(
+            "Care plan has no versions"
+        )
 
     latest_event = await get_latest_ai_care_plan_event(
         session=db,
@@ -485,3 +439,4 @@ async def get_psychologist_care_plan(
     )
 
     return care_plan, latest_version, latest_event
+
