@@ -2,7 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.ai.models.conversation import AiConversation, AiConversationMode
-from app.crud.patient_assignment import get_active_assignments
+from app.crud.patient_assignment import get_latest_patient_assignment
+from app.models.patient_assignment_event import PatientAssignmentEventType
 from app.models.user import User
 from app.ai.crud.conversation import (
     create_ai_conversation,
@@ -19,10 +20,12 @@ async def create_conversation(
     name: str | None,
     mode: AiConversationMode,
 ) -> AiConversation:
-    
+
     if user.is_psychologist:
-        raise ValueError("Only patients can create AI conversations")
-    
+        raise ValueError(
+            "Only patients can create AI conversations"
+        )
+
     conversation_name = (
         name.strip()
         if name is not None and name.strip()
@@ -32,26 +35,27 @@ async def create_conversation(
     assignment_id = None
 
     if mode == AiConversationMode.GUIDED:
-        active_assignments = await get_active_assignments(
+        assignment_data = await get_latest_patient_assignment(
             db=db,
-            user_id=user.id,
+            patient_id=user.id,
         )
 
-        patient_assignment = next(
-            (
-                assignment
-                for assignment in active_assignments
-                if assignment.patient_id == user.id
-            ),
-            None,
-        )
-
-        if patient_assignment is None:
+        if assignment_data is None:
             raise ValueError(
                 "Guided conversation requires an active psychologist assignment"
             )
 
-        assignment_id = patient_assignment.id
+        assignment, latest_event = assignment_data
+
+        if (
+            latest_event.event_type
+            != PatientAssignmentEventType.ACCEPTED
+        ):
+            raise ValueError(
+                "Guided conversation requires an active psychologist assignment"
+            )
+
+        assignment_id = assignment.id
 
     conversation = await create_ai_conversation(
         session=db,

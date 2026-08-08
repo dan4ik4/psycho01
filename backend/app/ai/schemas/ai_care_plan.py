@@ -77,6 +77,19 @@ class AiCarePlanEventRead(BaseModel):
     care_plan_id: UUID
     version_id: UUID
     event_type: AiCarePlanEventType
-    actor_id: UUID
+    performed_by_id: UUID
     comment: str | None
     created_at: datetime
+
+class AiCarePlanPatientRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    care_plan_id: UUID
+    version_id: UUID
+    patient_recommendations: str | None
+    event_type: AiCarePlanEventType
+
+class AiCarePlanPsychologistRead(BaseModel):
+    care_plan: AiCarePlanRead
+    latest_version: AiCarePlanVersionRead
+    latest_event: AiCarePlanEventRead | None

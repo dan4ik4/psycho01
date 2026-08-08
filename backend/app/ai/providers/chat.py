@@ -38,6 +38,7 @@ openai_client = AsyncOpenAI(
 
 async def generate_ai_reply(
     messages: list[ChatMessage],
+    guided_instructions: str | None = None,
 ) -> str:
     if not messages:
         raise ValueError("Message history cannot be empty")
@@ -57,10 +58,19 @@ async def generate_ai_reply(
             f"Последнее сообщение пользователя: {last_user_message}"
         )
 
+    instructions = SYSTEM_INSTRUCTIONS
+
+    if guided_instructions:
+        instructions += (
+            "\n\n"
+            "Additional instructions from the patient's psychologist:\n"
+            f"{guided_instructions}"
+        )
+
     try:
         response = await openai_client.responses.create(
             model=settings.OPENAI_MODEL,
-            instructions=SYSTEM_INSTRUCTIONS,
+            instructions=instructions,
             input=messages,
             max_output_tokens=settings.OPENAI_MAX_OUTPUT_TOKENS,
         )
