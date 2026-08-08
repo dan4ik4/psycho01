@@ -164,3 +164,4 @@ async def leave_call(
     )
 
     await db.commit()
+

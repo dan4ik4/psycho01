@@ -53,16 +53,16 @@ def upgrade() -> None:
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('care_plan_id', sa.UUID(), nullable=False),
     sa.Column('version_id', sa.UUID(), nullable=False),
-    sa.Column('event_type', sa.Enum('ACTIVATED', 'PAUSED', 'COMPLETED', name='ai_care_plan_event_type'), nullable=False),
-    sa.Column('actor_id', sa.UUID(), nullable=False),
+    sa.Column('event_type', sa.Enum('activated', 'paused', 'completed', name='ai_care_plan_event_type'), nullable=False),
+    sa.Column('performed_by_id', sa.UUID(), nullable=False),
     sa.Column('comment', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['actor_id'], ['users.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['performed_by_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['care_plan_id'], ['ai_care_plans.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['version_id'], ['ai_care_plan_versions.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_ai_care_plan_events_actor_id'), 'ai_care_plan_events', ['actor_id'], unique=False)
+    op.create_index(op.f('ix_ai_care_plan_events_performed_by_id'), 'ai_care_plan_events', ['performed_by_id'], unique=False)
     op.create_index(op.f('ix_ai_care_plan_events_care_plan_id'), 'ai_care_plan_events', ['care_plan_id'], unique=False)
     op.create_index(op.f('ix_ai_care_plan_events_created_at'), 'ai_care_plan_events', ['created_at'], unique=False)
     op.create_index(op.f('ix_ai_care_plan_events_event_type'), 'ai_care_plan_events', ['event_type'], unique=False)
@@ -77,7 +77,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_ai_care_plan_events_event_type'), table_name='ai_care_plan_events')
     op.drop_index(op.f('ix_ai_care_plan_events_created_at'), table_name='ai_care_plan_events')
     op.drop_index(op.f('ix_ai_care_plan_events_care_plan_id'), table_name='ai_care_plan_events')
-    op.drop_index(op.f('ix_ai_care_plan_events_actor_id'), table_name='ai_care_plan_events')
+    op.drop_index(op.f('ix_ai_care_plan_events_performed_by_id'), table_name='ai_care_plan_events')
     op.drop_table('ai_care_plan_events')
     op.execute("DROP TYPE IF EXISTS ai_care_plan_event_type")
     op.drop_index(op.f('ix_ai_care_plan_versions_created_by_id'), table_name='ai_care_plan_versions')

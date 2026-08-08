@@ -149,12 +149,15 @@ class AiCarePlanEvent(Base):
         SqlEnum(
             AiCarePlanEventType,
             name="ai_care_plan_event_type",
+            values_callable=lambda enum_cls: [
+                item.value for item in enum_cls
+            ],
         ),
         nullable=False,
         index=True,
     )
 
-    actor_id: Mapped[uuid.UUID] = mapped_column(
+    performed_by_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(
             "users.id",
