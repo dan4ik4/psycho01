@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +7,7 @@ from app.models.call import Call
 from app.models.call_event import CallEvent, CallEventType
 from app.models.slot import Slot
 from app.models.slot_event import SlotEvent, SlotEventType
+from app.core.settings import settings
 
 
 async def resolve_expired_lesson_outcomes(
@@ -14,6 +15,10 @@ async def resolve_expired_lesson_outcomes(
     limit: int = 100,
 ) -> int:
     now = datetime.now(timezone.utc)
+
+    finalization_cutoff = now - timedelta(
+        minutes=settings.AGORA_JOIN_WINDOW_MINUTES,
+    )
 
     ranked_events_subquery = (
         select(
@@ -49,7 +54,7 @@ async def resolve_expired_lesson_outcomes(
             SlotEvent.id == ranked_events_subquery.c.event_id,
         )
         .where(
-            Slot.end_at <= now,
+            Slot.end_at <= finalization_cutoff,
             SlotEvent.event_type == SlotEventType.BOOKED,
         )
         .order_by(

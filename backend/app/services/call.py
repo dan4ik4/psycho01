@@ -36,10 +36,19 @@ async def join_call(
     slot = await get_slot_by_id(
         db=db,
         slot_id=slot_id,
+        for_update=True,
     )
 
     if slot is None:
         raise NotFoundError("Slot not found")
+    
+    if (
+        user.id == slot.psychologist_id
+        and not user.is_psychologist
+    ):
+        raise ForbiddenError(
+            "Psychologist role is no longer active"
+        )
     
     latest_slot_event = await get_latest_slot_event(
         db=db,
@@ -81,14 +90,13 @@ async def join_call(
 
     if call is None:
         try:
-            call = await create_call(
-                db=db,
-                slot_id=slot.id,
-            )
-            await db.flush()
+            async with db.begin_nested():
+                call = await create_call(
+                    db=db,
+                    slot_id=slot.id,
+                )
+                await db.flush()
         except IntegrityError:
-            await db.rollback()
-
             call = await get_call_by_slot_id(
                 db=db,
                 slot_id=slot.id,

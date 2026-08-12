@@ -1,8 +1,9 @@
 from typing import Literal, TypedDict
 
-from openai import AsyncOpenAI, OpenAIError
+from openai import OpenAIError
 
 from app.core.settings import settings
+from app.ai.openai_client import get_openai_client
 
 class ChatMessage(TypedDict):
     role: Literal["user", "assistant"]
@@ -64,12 +65,6 @@ async def generate_ai_reply(
             "OPENAI_API_KEY is not configured"
         )
 
-    openai_client = AsyncOpenAI(
-        api_key=settings.OPENAI_API_KEY,
-        timeout=30.0,
-        max_retries=2,
-    )
-
     input_messages: list[dict[str, str]] = [
         {
             "role": "system",
@@ -96,10 +91,12 @@ async def generate_ai_reply(
 
     input_messages.extend(messages)
 
+    openai_client = get_openai_client()
+
     try:
         response = await openai_client.responses.create(
             model=settings.OPENAI_MODEL,
-            input=messages,
+            input=input_messages,
             max_output_tokens=settings.OPENAI_MAX_OUTPUT_TOKENS,
             store=False,
         )

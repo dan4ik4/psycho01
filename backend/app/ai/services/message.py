@@ -14,6 +14,7 @@ from app.ai.crud.message import (
     create_ai_message,
     get_ai_message_by_request_id,
     get_recent_ai_messages_for_conversation,
+    has_ai_messages_after,
 )
 from app.ai.models.ai_care_plan import AiCarePlanEventType
 from app.ai.models.conversation import AiConversationMode
@@ -91,6 +92,17 @@ async def send_user_message(
                 "user_message": existing_user_message,
                 "assistant_message": existing_assistant_message,
             }
+        
+        has_later_messages = await has_ai_messages_after(
+            session=db,
+            conversation_id=conversation.id,
+            created_at=existing_user_message.created_at,
+        )
+
+        if has_later_messages:
+            raise ConflictError(
+                "Cannot retry an earlier incomplete message"
+            )
 
     guided_instructions = None
 

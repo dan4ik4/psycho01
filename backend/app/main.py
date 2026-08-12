@@ -10,6 +10,7 @@ from app.core.settings import settings
 from app.routes import api
 from app.ai.routes import api as ai_api
 from app.jobs.scheduler import start_scheduler, stop_scheduler
+from app.ai.openai_client import close_openai_client
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -18,10 +19,12 @@ logger = logging.getLogger("uvicorn.error")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     start_scheduler()
+
     try:
         yield
     finally:
         stop_scheduler()
+        await close_openai_client()
 
 
 async def _log_exceptions(request: Request, call_next):
@@ -36,10 +39,25 @@ async def app_error_handler(
     request: Request,
     exc: AppError,
 ) -> JSONResponse:
+    if exc.status_code >= 500:
+        logger.error(
+            "INTERNAL APP ERROR: %s",
+            exc,
+            exc_info=(
+                type(exc),
+                exc,
+                exc.__traceback__,
+            ),
+        )
+
+        detail = "Internal server error"
+    else:
+        detail = str(exc)
+
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "detail": str(exc),
+            "detail": detail,
         },
     )
 

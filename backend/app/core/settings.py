@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from sqlalchemy import URL
 
 class Settings(BaseSettings):
     DB_HOST: str
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-5-mini"
     OPENAI_MAX_OUTPUT_TOKENS: int = 800
     OPENAI_HISTORY_MESSAGE_LIMIT: int = 40
+    OPENAI_MESSAGE_MAX_LENGTH: int = 10000
 
     AI_MOCK_MODE: bool = False
 
@@ -35,8 +37,15 @@ class Settings(BaseSettings):
 
 
     @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    def DATABASE_URL(self) -> URL:
+        return URL.create(
+            drivername="postgresql+asyncpg",
+            username=self.DB_USER,
+            password=self.DB_PASS,
+            host=self.DB_HOST,
+            port=self.DB_PORT,
+            database=self.DB_NAME,
+        )
 
     class Config:
         env_file = ".env"

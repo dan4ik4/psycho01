@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from app.ai.models.message import AiMessageRole
+from app.core.settings import settings
 
 
 class AiMessageCreate(BaseModel):
@@ -11,7 +12,7 @@ class AiMessageCreate(BaseModel):
 
     content: str = Field(
         min_length=1,
-        max_length=10000,
+        max_length=settings.OPENAI_MESSAGE_MAX_LENGTH,
     )
 
 

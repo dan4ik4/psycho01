@@ -44,7 +44,7 @@ db_url = URL.create(
 
 config.set_main_option(
     "sqlalchemy.url",
-    db_url,
+    db_url.replace("%", "%%"),
 )
 
 if config.config_file_name is not None:

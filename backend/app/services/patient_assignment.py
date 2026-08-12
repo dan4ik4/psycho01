@@ -36,6 +36,7 @@ async def request_assignment(
     psychologist = await get_user_by_id(
         db=db,
         user_id=psychologist_id,
+        for_update=True,
     )
 
     if (

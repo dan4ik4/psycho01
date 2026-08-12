@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import URL, create_engine, text
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -13,7 +13,15 @@ name = os.getenv("DB_NAME", "app")
 user = os.getenv("DB_USER", "app")
 pwd  = os.getenv("DB_PASS", "app")
 
-url = f"postgresql+psycopg2://{user}:{pwd}@{host}:{port}/{name}"
+url = URL.create(
+    drivername="postgresql+psycopg2",
+    username=user,
+    password=pwd,
+    host=host,
+    port=int(port),
+    database=name,
+)
+
 engine = create_engine(url)
 
 with engine.connect() as conn:

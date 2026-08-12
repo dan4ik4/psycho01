@@ -77,3 +77,21 @@ async def get_recent_ai_messages_for_conversation(
     messages.reverse()
 
     return messages
+
+async def has_ai_messages_after(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    created_at,
+) -> bool:
+    stmt = (
+        select(AiMessage.id)
+        .where(
+            AiMessage.conversation_id == conversation_id,
+            AiMessage.created_at > created_at,
+        )
+        .limit(1)
+    )
+
+    result = await session.execute(stmt)
+
+    return result.scalar_one_or_none() is not None

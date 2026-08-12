@@ -14,6 +14,8 @@ from app.crud.pending_registration import (
 )
 from app.crud.user import get_user_by_email, create_user
 from app.core.mailer import send_email
+from app.core.errors import ConflictError
+from sqlalchemy.exc import IntegrityError
 
 async def pre_register_user(
     db: AsyncSession,
@@ -21,7 +23,10 @@ async def pre_register_user(
     email: str,
     password_hash: str,
 ) -> None:
-    existing_user = await get_user_by_email(db, email)
+    existing_user = await get_user_by_email(
+        db,
+        email,
+    )
 
     if existing_user:
         raise HTTPException(
@@ -29,35 +34,25 @@ async def pre_register_user(
             detail="User with this email already exists",
         )
 
+    pending = await get_pending_by_email(
+        db,
+        email,
+    )
+
+    if pending is not None:
+        raise ConflictError(
+            "Registration is already pending"
+        )
+
     now = datetime.now(timezone.utc)
-    pending = await get_pending_by_email(db, email)
-
-    if pending:
-        seconds_since_last_send = (now - pending.last_sent_at).total_seconds()
-
-        if seconds_since_last_send < settings.REG_CODE_RESEND_COOLDOWN_SECONDS:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Please wait before requesting a new code",
-            )
-
-        if pending.resend_count >= settings.REG_CODE_MAX_RESENDS:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Registration code resend limit exceeded",
-            )
 
     code = generate_code6()
-    code_hash = hash_code(code, settings.REG_CODE_SECRET)
+    code_hash = hash_code(
+        code,
+        settings.REG_CODE_SECRET,
+    )
 
-    if pending:
-        await update_pending_registration_code(
-            db,
-            pending,
-            otp_code_hash=code_hash,
-            last_sent_at=now,
-        )
-    else:
+    try:
         await create_pending_registration(
             db,
             email=email,
@@ -65,11 +60,17 @@ async def pre_register_user(
             otp_code_hash=code_hash,
             last_sent_at=now,
         )
+    except IntegrityError as error:
+        await db.rollback()
+
+        raise ConflictError(
+            "Registration is already pending"
+        ) from error
 
     await send_email(
-    to=email,
-    subject="Registration code",
-    text=f"Your registration code: {code}",
+        to=email,
+        subject="Registration code",
+        text=f"Your registration code: {code}",
     )
 
     await db.commit()
@@ -139,7 +140,11 @@ async def resend_registration_code(
     *,
     email: str,
 ) -> None:
-    pending = await get_pending_by_email(db, email)
+    pending = await get_pending_by_email(
+        db,
+        email,
+        for_update=True,
+    )
 
     if not pending:
         raise HTTPException(
@@ -180,3 +185,4 @@ async def resend_registration_code(
     )
 
     await db.commit()
+

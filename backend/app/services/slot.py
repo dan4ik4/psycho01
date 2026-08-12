@@ -26,7 +26,6 @@ from app.core.errors import (
 from app.models.slot import Slot
 from app.models.slot_event import SlotEventType, SlotEvent
 from app.models.user import User
-from app.crud.patient_assignment import get_latest_patient_assignment
 from app.models.patient_assignment_event import PatientAssignmentEventType
 
 #psychologist

@@ -80,17 +80,6 @@ async def delete_pending_registration(
     await db.delete(pending)
     await db.flush()
 
-async def reset_otp_attempts(
-    db: AsyncSession,
-    pending: PendingRegistration,
-) -> PendingRegistration:
-    pending.otp_attempts = 0
-
-    await db.flush()
-    await db.refresh(pending)
-
-    return pending
-
 async def delete_expired_pending_registrations(
     db: AsyncSession,
     *,
