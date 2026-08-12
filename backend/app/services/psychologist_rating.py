@@ -11,6 +11,8 @@ from app.crud.psychologist_rating import (
 )
 from app.models.user import User
 from app.schemas.psychologist_rating import PsychologistRatingSummary
+from app.models.slot import Slot
+from app.models.slot_event import SlotEvent, SlotEventType
 
 
 async def rate_psychologist_service(
@@ -29,8 +31,11 @@ async def rate_psychologist_service(
         )
 
     result = await db.execute(
-        select(User).where(User.id == psychologist_id)
+        select(User)
+        .where(User.id == psychologist_id)
+        .with_for_update()
     )
+    
     psychologist = result.scalar_one_or_none()
 
     if (
@@ -41,6 +46,34 @@ async def rate_psychologist_service(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Psychologist not found",
+        )
+    
+    completed_session_result = await db.execute(
+        select(SlotEvent.id)
+        .join(
+            Slot,
+            Slot.id == SlotEvent.slot_id,
+        )
+        .where(
+            Slot.psychologist_id == psychologist_id,
+            SlotEvent.patient_id == patient.id,
+            SlotEvent.event_type == SlotEventType.COMPLETED,
+        )
+        .limit(1)
+    )
+
+    has_completed_session = (
+        completed_session_result.scalar_one_or_none()
+        is not None
+    )
+
+    if not has_completed_session:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "You can rate this psychologist only after "
+                "a completed session"
+            ),
         )
 
     rating_record = await upsert_psychologist_rating(

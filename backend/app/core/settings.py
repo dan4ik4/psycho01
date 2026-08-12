@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     DB_NAME: str
     DB_USER: str
     DB_PASS: str
-    JWT_SECRET: str = "SUPERSECRET"
+    JWT_SECRET: str
 
     REG_CODE_SECRET: str
     REG_CODE_TTL_MINUTES: int = 10
@@ -22,15 +22,16 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str
     RESEND_FROM_EMAIL: str
 
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-5-mini"
     OPENAI_MAX_OUTPUT_TOKENS: int = 800
+    OPENAI_HISTORY_MESSAGE_LIMIT: int = 40
 
     AI_MOCK_MODE: bool = False
 
     FRONTEND_URL: str = "http://localhost:3000"
 
-    DEBUG: bool = True
+    DEBUG: bool = False
 
 
     @property

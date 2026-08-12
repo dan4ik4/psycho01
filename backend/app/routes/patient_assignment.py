@@ -58,22 +58,13 @@ async def request_assignment_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Psychologist cannot request assignment",
         )
-    
-    try:
-        assignment = await request_assignment(
-            db=db,
-            patient_id=user.id,
-            psychologist_id=data.psychologist_id,
-            comment=data.comment,
-        )
 
-        return assignment
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    return await request_assignment(
+        db=db,
+        patient_id=user.id,
+        psychologist_id=data.psychologist_id,
+        comment=data.comment,
+    )
     
 @router.post(
     "/{assignment_id}/accept",
@@ -84,20 +75,11 @@ async def accept_assignment_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    try:
-        assignment = await accept_assignment(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-        )
-
-        return assignment
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    return await accept_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
+    )
     
 @router.post(
     "/{assignment_id}/reject",
@@ -109,21 +91,12 @@ async def reject_assignment_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    try:
-        assignment = await reject_assignment(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-            comment=data.comment,
-        )
-
-        return assignment
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    return await reject_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
+        comment=data.comment,
+    )
     
 @router.post(
     "/{assignment_id}/finish",
@@ -135,21 +108,12 @@ async def finish_assignment_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    try:
-        assignment = await finish_assignment(
-            db=db,
-            assignment_id=assignment_id,
-            performed_by_id=user.id,
-            comment=data.comment,
-        )
-
-        return assignment
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    return await finish_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        performed_by_id=user.id,
+        comment=data.comment,
+    )
     
 @router.post(
     "/{assignment_id}/cancel",
@@ -161,21 +125,12 @@ async def cancel_assignment_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    try:
-        assignment = await cancel_assignment(
-            db=db,
-            assignment_id=assignment_id,
-            patient_id=user.id,
-            comment=data.comment,
-        )
-
-        return assignment
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    return await cancel_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        patient_id=user.id,
+        comment=data.comment,
+    )
     
 #get
 

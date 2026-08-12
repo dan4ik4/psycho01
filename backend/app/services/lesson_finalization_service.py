@@ -1,129 +1,13 @@
-from uuid import UUID
+from datetime import datetime, timezone
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.call import Call
 from app.models.call_event import CallEvent, CallEventType
-
-from datetime import datetime, timezone
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.slot import Slot
 from app.models.slot_event import SlotEvent, SlotEventType
 
-
-async def user_joined_lesson_call(
-    db: AsyncSession,
-    slot_id: UUID,
-    user_id: UUID,
-) -> bool:
-    stmt = (
-        select(CallEvent.id)
-        .join(Call, CallEvent.call_id == Call.id)
-        .where(
-            Call.slot_id == slot_id,
-            CallEvent.user_id == user_id,
-            CallEvent.event_type == CallEventType.JOINED,
-        )
-        .limit(1)
-    )
-
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none() is not None
-
-async def get_latest_slot_event(
-    db: AsyncSession,
-    slot_id,
-) -> SlotEvent | None:
-    stmt = (
-        select(SlotEvent)
-        .where(SlotEvent.slot_id == slot_id)
-        .order_by(SlotEvent.created_at.desc())
-        .limit(1)
-    )
-
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none()
-
-async def finalize_booked_slot_if_needed(
-    db: AsyncSession,
-    slot: Slot,
-) -> SlotEvent | None:
-    now = datetime.now(timezone.utc)
-
-    if slot.end_at > now:
-        return None
-
-    latest_event = await get_latest_slot_event(
-        db=db,
-        slot_id=slot.id,
-    )
-
-    if latest_event is None:
-        return None
-
-    if latest_event.event_type != SlotEventType.BOOKED:
-        return None
-
-    patient_id = latest_event.patient_id
-    psychologist_id = slot.psychologist_id
-
-    patient_joined = await user_joined_lesson_call(
-        db=db,
-        slot_id=slot.id,
-        user_id=patient_id,
-    )
-
-    psychologist_joined = await user_joined_lesson_call(
-        db=db,
-        slot_id=slot.id,
-        user_id=psychologist_id,
-    )
-
-    if patient_joined and psychologist_joined:
-        event_type = SlotEventType.COMPLETED
-        comment = (
-            "Automatically marked as completed: "
-            "both participants joined the call"
-        )
-
-    elif not patient_joined and psychologist_joined:
-        event_type = SlotEventType.MISSED
-        comment = (
-            "Automatically marked as missed: "
-            "patient did not join the call"
-        )
-
-    elif patient_joined and not psychologist_joined:
-        event_type = SlotEventType.MISSED
-        comment = (
-            "Automatically marked as missed: "
-            "psychologist did not join the call"
-        )
-
-    else:
-        event_type = SlotEventType.MISSED
-        comment = (
-            "Automatically marked as missed: "
-            "neither participant joined the call"
-        )
-
-    final_event = SlotEvent(
-        slot_id=slot.id,
-        patient_id=patient_id,
-        event_type=event_type,
-        performed_by_id=None,
-        comment=comment,
-    )
-
-    db.add(final_event)
-    await db.commit()
-    await db.refresh(final_event)
-
-    return final_event
 
 async def resolve_expired_lesson_outcomes(
     db: AsyncSession,
@@ -131,48 +15,157 @@ async def resolve_expired_lesson_outcomes(
 ) -> int:
     now = datetime.now(timezone.utc)
 
-    latest_events_subq = (
+    ranked_events_subquery = (
         select(
+            SlotEvent.id.label("event_id"),
             SlotEvent.slot_id.label("slot_id"),
-            func.max(SlotEvent.created_at).label("latest_created_at"),
+            func.row_number()
+            .over(
+                partition_by=SlotEvent.slot_id,
+                order_by=(
+                    SlotEvent.created_at.desc(),
+                    SlotEvent.id.desc(),
+                ),
+            )
+            .label("event_position"),
         )
-        .group_by(SlotEvent.slot_id)
         .subquery()
     )
 
     stmt = (
-        select(Slot)
+        select(
+            Slot,
+            SlotEvent,
+        )
         .join(
-            latest_events_subq,
-            latest_events_subq.c.slot_id == Slot.id,
+            ranked_events_subquery,
+            and_(
+                ranked_events_subquery.c.slot_id == Slot.id,
+                ranked_events_subquery.c.event_position == 1,
+            ),
         )
         .join(
             SlotEvent,
-            and_(
-                SlotEvent.slot_id == Slot.id,
-                SlotEvent.created_at == latest_events_subq.c.latest_created_at,
-            ),
+            SlotEvent.id == ranked_events_subquery.c.event_id,
         )
         .where(
             Slot.end_at <= now,
             SlotEvent.event_type == SlotEventType.BOOKED,
         )
-        .order_by(Slot.end_at.asc())
+        .order_by(
+            Slot.end_at.asc(),
+            Slot.id.asc(),
+        )
         .limit(limit)
+        .with_for_update(
+            of=Slot,
+            skip_locked=True,
+        )
     )
 
     result = await db.execute(stmt)
-    slots = result.scalars().all()
+    rows = list(result.all())
 
-    finalized_count = 0
+    if not rows:
+        return 0
 
-    for slot in slots:
-        final_event = await finalize_booked_slot_if_needed(
-            db=db,
-            slot=slot,
+    slot_ids = [
+        slot.id
+        for slot, _ in rows
+    ]
+
+    joined_result = await db.execute(
+        select(
+            Call.slot_id,
+            CallEvent.user_id,
+        )
+        .join(
+            CallEvent,
+            CallEvent.call_id == Call.id,
+        )
+        .where(
+            Call.slot_id.in_(slot_ids),
+            CallEvent.event_type == CallEventType.JOINED,
+        )
+        .distinct()
+    )
+
+    joined_users_by_slot: dict = {}
+
+    for slot_id, user_id in joined_result.all():
+        if user_id is None:
+            continue
+
+        joined_users_by_slot.setdefault(
+            slot_id,
+            set(),
+        ).add(user_id)
+
+    final_events: list[SlotEvent] = []
+
+    for slot, latest_event in rows:
+        patient_id = latest_event.patient_id
+
+        if patient_id is None:
+            continue
+
+        joined_users = joined_users_by_slot.get(
+            slot.id,
+            set(),
         )
 
-        if final_event is not None:
-            finalized_count += 1
+        patient_joined = (
+            patient_id in joined_users
+        )
 
-    return finalized_count
+        psychologist_joined = (
+            slot.psychologist_id in joined_users
+        )
+
+        if patient_joined and psychologist_joined:
+            event_type = SlotEventType.COMPLETED
+            comment = (
+                "Automatically marked as completed: "
+                "both participants joined the call"
+            )
+
+        elif not patient_joined and psychologist_joined:
+            event_type = SlotEventType.MISSED
+            comment = (
+                "Automatically marked as missed: "
+                "patient did not join the call"
+            )
+
+        elif patient_joined and not psychologist_joined:
+            event_type = SlotEventType.MISSED
+            comment = (
+                "Automatically marked as missed: "
+                "psychologist did not join the call"
+            )
+
+        else:
+            event_type = SlotEventType.MISSED
+            comment = (
+                "Automatically marked as missed: "
+                "neither participant joined the call"
+            )
+
+        final_events.append(
+            SlotEvent(
+                slot_id=slot.id,
+                patient_id=patient_id,
+                event_type=event_type,
+                performed_by_id=None,
+                comment=comment,
+            )
+        )
+
+    if not final_events:
+        await db.rollback()
+        return 0
+
+    db.add_all(final_events)
+
+    await db.commit()
+
+    return len(final_events)

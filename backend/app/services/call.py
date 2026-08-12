@@ -18,7 +18,12 @@ from app.services.agora import (
     generate_agora_token,
     generate_agora_uid,
 )
-
+from app.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    InternalError,
+    NotFoundError,
+)
 from app.crud.slot import get_latest_slot_event
 from app.models.slot_event import SlotEventType
 
@@ -34,7 +39,7 @@ async def join_call(
     )
 
     if slot is None:
-        raise ValueError("Slot not found")
+        raise NotFoundError("Slot not found")
     
     latest_slot_event = await get_latest_slot_event(
         db=db,
@@ -45,13 +50,13 @@ async def join_call(
         latest_slot_event is None
         or latest_slot_event.event_type != SlotEventType.BOOKED
     ):
-        raise ValueError("Slot is not booked")
+        raise ConflictError("Slot is not booked")
 
     if (
         user.id != slot.psychologist_id
         and user.id != latest_slot_event.patient_id
     ):
-        raise ValueError("You are not allowed to join this call")
+        raise ForbiddenError("You are not allowed to join this call")
 
     now = datetime.now(timezone.utc)
 
@@ -59,8 +64,15 @@ async def join_call(
         minutes=settings.AGORA_JOIN_WINDOW_MINUTES,
     )
 
+    join_until = slot.end_at + timedelta(
+        minutes=settings.AGORA_JOIN_WINDOW_MINUTES,
+    )
+
     if now < join_from:
-        raise ValueError("Call is not available yet")
+        raise ConflictError("Call is not available yet")
+    
+    if now > join_until:
+        raise ConflictError("Call is no longer available")
 
     call = await get_call_by_slot_id(
         db=db,
@@ -83,7 +95,7 @@ async def join_call(
             )
 
             if call is None:
-                raise ValueError("Call creation failed")
+                raise InternalError("Call creation failed")
 
     await create_call_event(
         db=db,
@@ -130,7 +142,7 @@ async def leave_call(
     )
 
     if slot is None:
-        raise ValueError("Slot not found")
+        raise NotFoundError("Slot not found")
 
     latest_slot_event = await get_latest_slot_event(
         db=db,
@@ -146,7 +158,7 @@ async def leave_call(
     ):
         pass
     else:
-        raise ValueError("You are not allowed to leave this call")
+        raise ForbiddenError("You are not allowed to leave this call")
 
     call = await get_call_by_slot_id(
         db=db,
@@ -154,7 +166,7 @@ async def leave_call(
     )
 
     if call is None:
-        raise ValueError("Call not found")
+        raise NotFoundError("Call not found")
 
     await create_call_event(
         db=db,

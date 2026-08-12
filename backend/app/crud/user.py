@@ -36,9 +36,14 @@ async def create_user(
 async def get_user_by_id(
     db: AsyncSession,
     user_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> User | None:
-    result = await db.execute(
-        select(User).where(User.id == user_id)
-    )
+    query = select(User).where(User.id == user_id)
+
+    if for_update:
+        query = query.with_for_update()
+
+    result = await db.execute(query)
 
     return result.scalar_one_or_none()

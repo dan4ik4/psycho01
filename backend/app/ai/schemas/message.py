@@ -7,6 +7,8 @@ from app.ai.models.message import AiMessageRole
 
 
 class AiMessageCreate(BaseModel):
+    request_id: uuid.UUID
+
     content: str = Field(
         min_length=1,
         max_length=10000,

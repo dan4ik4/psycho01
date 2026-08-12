@@ -1,13 +1,15 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.ai.models.ai_care_plan import AiCarePlanEventType
 
 
 class AiCarePlanContentBase(BaseModel):
-    instructions_for_ai: str
+    instructions_for_ai: str = Field(
+        max_length=10000,
+    )
     patient_recommendations: str | None = None
 
     @field_validator("instructions_for_ai")

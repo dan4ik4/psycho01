@@ -7,11 +7,19 @@ from app.models.pending_registration import PendingRegistration
 
 async def get_pending_by_email(
     db: AsyncSession,
-    email: str
+    email: str,
+    *,
+    for_update: bool = False,
 ) -> PendingRegistration | None:
-    result = await db.execute(
-        select(PendingRegistration).where(PendingRegistration.email == email)
+    query = select(PendingRegistration).where(
+        PendingRegistration.email == email
     )
+
+    if for_update:
+        query = query.with_for_update()
+
+    result = await db.execute(query)
+
     return result.scalar_one_or_none()
 
 async def create_pending_registration(
@@ -41,11 +49,9 @@ async def update_pending_registration_code(
     db: AsyncSession,
     pending: PendingRegistration,
     *,
-    hashed_password: str,
     otp_code_hash: str,
     last_sent_at: datetime,
 ) -> PendingRegistration:
-    pending.hashed_password = hashed_password
     pending.otp_code_hash = otp_code_hash
     pending.otp_attempts = 0
     pending.last_sent_at = last_sent_at

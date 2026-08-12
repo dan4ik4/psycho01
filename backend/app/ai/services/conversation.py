@@ -2,7 +2,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.ai.models.conversation import AiConversation, AiConversationMode
-from app.crud.patient_assignment import get_latest_patient_assignment
+from app.crud.patient_assignment import (
+    get_latest_patient_assignment,
+    get_assignment_by_id,
+    get_latest_assignment_event,
+)
 from app.models.patient_assignment_event import PatientAssignmentEventType
 from app.models.user import User
 from app.ai.crud.conversation import (
@@ -16,6 +20,12 @@ from app.ai.crud.ai_care_plan import (
     get_ai_care_plan_by_assignment_id,
     get_latest_ai_care_plan_event,
 )
+from app.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 from app.ai.models.ai_care_plan import AiCarePlanEventType
 
 
@@ -27,7 +37,7 @@ async def create_conversation(
 ) -> AiConversation:
 
     if user.is_psychologist:
-        raise ValueError(
+        raise ForbiddenError(
             "Only patients can create AI conversations"
         )
 
@@ -46,17 +56,33 @@ async def create_conversation(
         )
 
         if assignment_data is None:
-            raise ValueError(
+            raise ConflictError(
                 "Guided conversation requires an active psychologist assignment"
             )
 
         assignment, latest_event = assignment_data
 
+        assignment = await get_assignment_by_id(
+            db=db,
+            assignment_id=assignment.id,
+            for_update=True,
+        )
+
+        if assignment is None:
+            raise ConflictError(
+                "Guided conversation requires an active psychologist assignment"
+            )
+
+        latest_event = await get_latest_assignment_event(
+            db=db,
+            assignment_id=assignment.id,
+        )
+
         if (
             latest_event.event_type
             != PatientAssignmentEventType.ACCEPTED
         ):
-            raise ValueError(
+            raise ConflictError(
                 "Guided conversation requires an active psychologist assignment"
             )
 
@@ -66,7 +92,7 @@ async def create_conversation(
         )
 
         if care_plan is None:
-            raise ValueError(
+            raise ConflictError(
                 "Guided conversation requires an active care plan"
             )
 
@@ -80,7 +106,7 @@ async def create_conversation(
             or latest_care_plan_event.event_type
             != AiCarePlanEventType.ACTIVATED
         ):
-            raise ValueError(
+            raise ConflictError(
                 "Guided conversation requires an active care plan"
             )
 
@@ -104,7 +130,7 @@ async def get_my_conversations(
     user: User,
 ) -> list[AiConversation]:
     if user.is_psychologist:
-        raise ValueError("Only patients can access AI conversations")
+        raise ForbiddenError("Only patients can access AI conversations")
 
     return await get_ai_conversations_for_patient(
         session=db,
@@ -118,7 +144,7 @@ async def rename_conversation(
     name: str,
 ) -> AiConversation:
     if user.is_psychologist:
-        raise ValueError("Only patients can rename AI conversations")
+        raise ForbiddenError("Only patients can rename AI conversations")
 
     conversation = await get_ai_conversation_for_patient(
         session=db,
@@ -127,12 +153,12 @@ async def rename_conversation(
     )
 
     if conversation is None:
-        raise ValueError("Conversation not found")
+        raise NotFoundError("Conversation not found")
 
     normalized_name = name.strip()
 
     if not normalized_name:
-        raise ValueError("Conversation name cannot be empty")
+        raise ValidationError("Conversation name cannot be empty")
 
     conversation = await rename_ai_conversation(
         session=db,
@@ -151,7 +177,7 @@ async def get_conversation_with_messages(
     conversation_id: uuid.UUID,
 ) -> AiConversation:
     if user.is_psychologist:
-        raise ValueError(
+        raise ForbiddenError(
             "Only patients can access AI conversations"
         )
 
@@ -164,7 +190,7 @@ async def get_conversation_with_messages(
     )
 
     if conversation is None:
-        raise ValueError("Conversation not found")
+        raise NotFoundError("Conversation not found")
 
     return conversation
 

@@ -2,7 +2,13 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, Text
+from sqlalchemy import (
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,7 +60,22 @@ class AiMessage(Base):
         index=True,
     )
 
+    request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
+
     conversation = relationship(
         "AiConversation",
         back_populates="messages",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "request_id",
+            "role",
+            name="uq_ai_messages_conversation_request_role",
+        ),
     )

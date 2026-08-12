@@ -27,12 +27,17 @@ async def get_assignment_by_pair(
 async def get_assignment_by_id(
     db: AsyncSession,
     assignment_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> PatientAssignment | None:
-    result = await db.execute(
-        select(PatientAssignment).where(
-            PatientAssignment.id == assignment_id,
-        )
+    query = select(PatientAssignment).where(
+        PatientAssignment.id == assignment_id,
     )
+
+    if for_update:
+        query = query.with_for_update()
+
+    result = await db.execute(query)
 
     return result.scalar_one_or_none()
 

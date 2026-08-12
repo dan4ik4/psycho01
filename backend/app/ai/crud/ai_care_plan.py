@@ -14,12 +14,17 @@ from app.ai.models.ai_care_plan import (
 async def get_ai_care_plan_by_assignment_id(
     session: AsyncSession,
     assignment_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> AiCarePlan | None:
-    result = await session.execute(
-        select(AiCarePlan).where(
-            AiCarePlan.assignment_id == assignment_id,
-        )
+    query = select(AiCarePlan).where(
+        AiCarePlan.assignment_id == assignment_id,
     )
+
+    if for_update:
+        query = query.with_for_update()
+
+    result = await session.execute(query)
 
     return result.scalar_one_or_none()
 

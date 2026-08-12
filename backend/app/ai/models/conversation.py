@@ -41,7 +41,6 @@ class AiConversation(Base):
         String(100),
         nullable=False,
         default="Новый чат",
-        server_default="Новый чат",
     )
 
     mode: Mapped[AiConversationMode] = mapped_column(

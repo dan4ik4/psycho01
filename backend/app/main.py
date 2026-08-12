@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.errors import AppError
 from app.core.settings import settings
 from app.routes import api
 from app.ai.routes import api as ai_api
@@ -30,6 +32,18 @@ async def _log_exceptions(request: Request, call_next):
         raise
 
 
+async def app_error_handler(
+    request: Request,
+    exc: AppError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": str(exc),
+        },
+    )
+
+
 app = FastAPI(
     title="TheraAI",
     version="0.1.0",
@@ -39,9 +53,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# единая точка подключения всех маршрутов
+app.add_exception_handler(
+    AppError,
+    app_error_handler,
+)
+
 app.include_router(api)
 app.include_router(ai_api)
 
-# мидлварь для логов исключений
-app.add_middleware(BaseHTTPMiddleware, dispatch=_log_exceptions)
+app.add_middleware(
+    BaseHTTPMiddleware,
+    dispatch=_log_exceptions,
+)

@@ -58,4 +58,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_patient_assignments_psychologist_id'), table_name='patient_assignments')
     op.drop_index(op.f('ix_patient_assignments_patient_id'), table_name='patient_assignments')
     op.drop_table('patient_assignments')
+    sa.Enum(
+        name="patient_assignment_event_type",
+    ).drop(
+        op.get_bind(),
+        checkfirst=True,
+    )
     # ### end Alembic commands ###

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
@@ -35,19 +35,12 @@ async def create_ai_conversation_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ) -> AiConversationOut:
-    try:
-        return await create_conversation(
-            db=db,
-            user=user,
-            name=data.name,
-            mode=data.mode,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await create_conversation(
+        db=db,
+        user=user,
+        name=data.name,
+        mode=data.mode,
+    )
     
 @router.get(
     "",
@@ -57,17 +50,10 @@ async def get_my_ai_conversations_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ) -> list[AiConversationOut]:
-    try:
-        return await get_my_conversations(
-            db=db,
-            user=user,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await get_my_conversations(
+        db=db,
+        user=user,
+    )
 
 
 @router.patch(
@@ -80,19 +66,12 @@ async def rename_ai_conversation_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ) -> AiConversationOut:
-    try:
-        return await rename_conversation(
-            db=db,
-            user=user,
-            conversation_id=conversation_id,
-            name=data.name,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await rename_conversation(
+        db=db,
+        user=user,
+        conversation_id=conversation_id,
+        name=data.name,
+    )
     
 @router.get(
     "/{conversation_id}",
@@ -103,16 +82,9 @@ async def get_ai_conversation_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ) -> AiConversationDetailOut:
-    try:
-        return await get_conversation_with_messages(
-            db=db,
-            user=user,
-            conversation_id=conversation_id,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(error),
-        ) from error
+    return await get_conversation_with_messages(
+        db=db,
+        user=user,
+        conversation_id=conversation_id,
+    )
     

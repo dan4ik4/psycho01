@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, exists, select
 
 from app.crud.slot import (
     create_slot as create_slot_crud,
@@ -11,6 +11,17 @@ from app.crud.slot import (
     get_slot_by_id,
     get_slots_with_latest_events,
     get_slot_history_events,
+)
+from app.crud.patient_assignment import (
+    get_latest_patient_assignment,
+    get_assignment_by_id,
+    get_latest_assignment_event,
+)
+from app.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
 )
 from app.models.slot import Slot
 from app.models.slot_event import SlotEventType, SlotEvent
@@ -26,7 +37,7 @@ async def create_slot(
     end_at: datetime,
 ) -> Slot:
     if not user.is_psychologist:
-        raise ValueError("Only psychologists can create slots")
+        raise ForbiddenError("Only psychologists can create slots")
     
     await db.execute(
         select(User)
@@ -37,16 +48,16 @@ async def create_slot(
     now = datetime.now(timezone.utc)
 
     if start_at <= now:
-        raise ValueError("Slot start time must be in the future")
+        raise ValidationError("Slot start time must be in the future")
 
     if end_at <= now:
-        raise ValueError("Slot end time must be in the future")
+        raise ValidationError("Slot end time must be in the future")
 
     if start_at >= end_at:
-        raise ValueError("Slot start time must be before end time")
+        raise ValidationError("Slot start time must be before end time")
 
     if end_at - start_at < timedelta(minutes=15):
-        raise ValueError("Slot duration must be at least 15 minutes")
+        raise ValidationError("Slot duration must be at least 15 minutes")
 
     slots_with_events = await get_slots_with_latest_events(
         db=db,
@@ -60,7 +71,7 @@ async def create_slot(
             and start_at < slot.end_at
             and end_at > slot.start_at
         ):
-            raise ValueError("Slot overlaps with existing slot")
+            raise ConflictError("Slot overlaps with existing slot")
 
     slot = await create_slot_crud(
         db=db,
@@ -86,7 +97,7 @@ async def get_my_slots(
     user: User,
 ) -> list[Slot]:
     if not user.is_psychologist:
-        raise ValueError("Only psychologists can view their slots")
+        raise ForbiddenError("Only psychologists can view their slots")
 
     slots_with_events = await get_slots_with_latest_events(
         db=db,
@@ -112,18 +123,19 @@ async def remove_slot(
     comment: str | None = None,
 ) -> Slot:
     if not user.is_psychologist:
-        raise ValueError("Only psychologists can remove slots")
+        raise ForbiddenError("Only psychologists can remove slots")
 
     slot = await get_slot_by_id(
         db=db,
         slot_id=slot_id,
+        for_update=True,
     )
 
     if slot is None:
-        raise ValueError("Slot not found")
+        raise NotFoundError("Slot not found")
 
     if slot.psychologist_id != user.id:
-        raise ValueError("You are not allowed to remove this slot")
+        raise ForbiddenError("You are not allowed to remove this slot")
 
     latest_event = await get_latest_slot_event(
         db=db,
@@ -131,13 +143,13 @@ async def remove_slot(
     )
 
     if latest_event is None:
-        raise ValueError("Slot has no events")
+        raise ConflictError("Slot has no events")
 
     if latest_event.event_type == SlotEventType.BOOKED:
-        raise ValueError("Booked slot cannot be removed")
+        raise ConflictError("Booked slot cannot be removed")
 
     if latest_event.event_type == SlotEventType.REMOVED:
-        raise ValueError("Slot is already removed")
+        raise ConflictError("Slot is already removed")
 
     await create_slot_event(
         db=db,
@@ -158,7 +170,7 @@ async def get_available_slots(
     user: User,
 ) -> list[Slot]:
     if user.is_psychologist:
-        raise ValueError("Only patients can view available slots")
+        raise ForbiddenError("Only patients can view available slots")
 
     assignment_data = await get_latest_patient_assignment(
         db=db,
@@ -166,12 +178,12 @@ async def get_available_slots(
     )
 
     if assignment_data is None:
-        raise ValueError("Patient has no assignment")
+        raise ConflictError("Patient has no assignment")
 
     assignment, latest_assignment_event = assignment_data
 
     if latest_assignment_event.event_type != PatientAssignmentEventType.ACCEPTED:
-        raise ValueError("Patient has no active assignment")
+        raise ConflictError("Patient has no active assignment")
 
     slots_with_events = await get_slots_with_latest_events(
         db=db,
@@ -199,27 +211,7 @@ async def book_slot(
     user: User,
 ) -> Slot:
     if user.is_psychologist:
-        raise ValueError("Only patients can book slots")
-
-    slot = await get_slot_by_id(
-        db=db,
-        slot_id=slot_id,
-        for_update=True
-    )
-
-    if slot is None:
-        raise ValueError("Slot not found")
-
-    if slot.start_at <= datetime.now(timezone.utc):
-        raise ValueError("Cannot book slot in the past")
-
-    assignment = await get_latest_patient_assignment(
-        db=db,
-        patient_id=user.id,
-    )
-
-    if assignment is None:
-        raise ValueError("Patient has no assignment")
+        raise ForbiddenError("Only patients can book slots")
 
     assignment_data = await get_latest_patient_assignment(
         db=db,
@@ -227,15 +219,45 @@ async def book_slot(
     )
 
     if assignment_data is None:
-        raise ValueError("Patient has no assignment")
+        raise ConflictError("Patient has no assignment")
 
-    assignment, latest_assignment_event = assignment_data
+    assignment, _ = assignment_data
 
-    if latest_assignment_event.event_type != PatientAssignmentEventType.ACCEPTED:
-        raise ValueError("Patient has no active assignment")
+    assignment = await get_assignment_by_id(
+        db=db,
+        assignment_id=assignment.id,
+        for_update=True,
+    )
+
+    if assignment is None:
+        raise ConflictError("Patient has no assignment")
+
+    latest_assignment_event = await get_latest_assignment_event(
+        db=db,
+        assignment_id=assignment.id,
+    )
+
+    if (
+        latest_assignment_event is None
+        or latest_assignment_event.event_type
+        != PatientAssignmentEventType.ACCEPTED
+    ):
+        raise ConflictError("Patient has no active assignment")
+    
+    slot = await get_slot_by_id(
+        db=db,
+        slot_id=slot_id,
+        for_update=True
+    )
+
+    if slot is None:
+        raise NotFoundError("Slot not found")
+
+    if slot.start_at <= datetime.now(timezone.utc):
+        raise ConflictError("Cannot book slot in the past")
 
     if slot.psychologist_id != assignment.psychologist_id:
-        raise ValueError("Slot does not belong to patient's psychologist")
+        raise ConflictError("Slot does not belong to patient's psychologist")
 
     latest_slot_event = await get_latest_slot_event(
         db=db,
@@ -249,7 +271,7 @@ async def book_slot(
             SlotEventType.CANCELLED,
         )
     ):
-        raise ValueError("Slot is not available")
+        raise ConflictError("Slot is not available")
 
     await create_slot_event(
         db=db,
@@ -273,13 +295,14 @@ async def cancel_slot_booking(
     slot = await get_slot_by_id(
         db=db,
         slot_id=slot_id,
+        for_update=True,
     )
 
     if slot is None:
-        raise ValueError("Slot not found")
+        raise NotFoundError("Slot not found")
     
     if slot.start_at <= datetime.now(timezone.utc):
-        raise ValueError("Cannot cancel booking after lesson has started")
+        raise ConflictError("Cannot cancel booking after lesson has started")
 
     latest_event = await get_latest_slot_event(
         db=db,
@@ -287,17 +310,17 @@ async def cancel_slot_booking(
     )
 
     if latest_event is None or latest_event.event_type != SlotEventType.BOOKED:
-        raise ValueError("Slot is not booked")
+        raise ConflictError("Slot is not booked")
 
     if user.is_psychologist:
         if slot.psychologist_id != user.id:
-            raise ValueError("You can cancel only your own slot")
+            raise ForbiddenError("You can cancel only your own slot")
 
         if not comment:
-            raise ValueError("Comment is required for psychologist cancellation")
+            raise ValidationError("Comment is required for psychologist cancellation")
     else:
         if latest_event.patient_id != user.id:
-            raise ValueError("You can cancel only your own booking")
+            raise ForbiddenError("You can cancel only your own booking")
 
     await create_slot_event(
         db=db,
@@ -318,7 +341,7 @@ async def get_my_booked_slots(
     user: User,
 ) -> list[tuple[Slot, SlotEvent | None]]:
     if user.is_psychologist:
-        raise ValueError("Only patients can view their bookings")
+        raise ForbiddenError("Only patients can view their bookings")
 
     slots_with_events = await get_slots_with_latest_events(db=db)
 
@@ -344,4 +367,50 @@ async def get_slot_history(
         user_id=user.id,
         is_psychologist=user.is_psychologist,
     )
+
+async def cleanup_expired_unbooked_slots(
+    db: AsyncSession,
+    *,
+    retention_days: int = 7,
+    limit: int = 500,
+) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        days=retention_days,
+    )
+
+    booked_event_exists = exists(
+        select(SlotEvent.id).where(
+            SlotEvent.slot_id == Slot.id,
+            SlotEvent.event_type == SlotEventType.BOOKED,
+        )
+    )
+
+    result = await db.execute(
+        select(Slot.id)
+        .where(
+            Slot.end_at < cutoff,
+            ~booked_event_exists,
+        )
+        .order_by(Slot.end_at.asc())
+        .limit(limit)
+        .with_for_update(
+            skip_locked=True,
+        )
+    )
+
+    slot_ids = list(result.scalars().all())
+
+    if not slot_ids:
+        await db.rollback()
+        return 0
+
+    await db.execute(
+        delete(Slot).where(
+            Slot.id.in_(slot_ids),
+        )
+    )
+
+    await db.commit()
+
+    return len(slot_ids)
 

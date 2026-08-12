@@ -30,11 +30,16 @@ async def get_ai_conversation_for_patient(
     session: AsyncSession,
     conversation_id: uuid.UUID,
     patient_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> AiConversation | None:
     stmt = select(AiConversation).where(
         AiConversation.id == conversation_id,
         AiConversation.patient_id == patient_id,
     )
+
+    if for_update:
+        stmt = stmt.with_for_update()
 
     result = await session.execute(stmt)
     return result.scalar_one_or_none()

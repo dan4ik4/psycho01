@@ -54,7 +54,6 @@ async def pre_register_user(
         await update_pending_registration_code(
             db,
             pending,
-            hashed_password=password_hash,
             otp_code_hash=code_hash,
             last_sent_at=now,
         )
@@ -81,7 +80,11 @@ async def confirm_registration(
     email: str,
     otp_code: str,
 ) -> None:
-    pending = await get_pending_by_email(db, email)
+    pending = await get_pending_by_email(
+        db,
+        email,
+        for_update=True,
+    )
 
     if not pending:
         raise HTTPException(
@@ -166,7 +169,6 @@ async def resend_registration_code(
     await update_pending_registration_code(
         db,
         pending,
-        hashed_password=pending.hashed_password,
         otp_code_hash=code_hash,
         last_sent_at=now,
     )

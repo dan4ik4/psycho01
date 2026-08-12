@@ -24,6 +24,12 @@ from app.crud.patient_assignment import (
 from app.models.patient_assignment_event import (
     PatientAssignmentEventType,
 )
+from app.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    InternalError,
+    NotFoundError,
+)
 
 
 async def _validate_active_assignment_for_psychologist(
@@ -34,13 +40,14 @@ async def _validate_active_assignment_for_psychologist(
     assignment = await get_assignment_by_id(
         db=db,
         assignment_id=assignment_id,
+        for_update=True,
     )
 
     if assignment is None:
-        raise ValueError("Assignment not found")
+        raise NotFoundError("Assignment not found")
 
     if assignment.psychologist_id != psychologist_id:
-        raise ValueError(
+        raise ForbiddenError(
             "You are not allowed to manage this care plan"
         )
 
@@ -54,7 +61,7 @@ async def _validate_active_assignment_for_psychologist(
         or latest_event.event_type
         != PatientAssignmentEventType.ACCEPTED
     ):
-        raise ValueError("Assignment is not active")
+        raise ConflictError("Assignment is not active")
 
 async def create_care_plan(
     db: AsyncSession,
@@ -75,7 +82,7 @@ async def create_care_plan(
     )
 
     if existing_care_plan is not None:
-        raise ValueError(
+        raise ConflictError(
             "Care plan already exists for this assignment"
         )
 
@@ -116,10 +123,11 @@ async def activate_care_plan_version(
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
         assignment_id=assignment_id,
+        for_update=True,
     )
 
     if care_plan is None:
-        raise ValueError("Care plan not found")
+        raise NotFoundError("Care plan not found")
 
     version = await get_ai_care_plan_version(
         session=db,
@@ -128,7 +136,7 @@ async def activate_care_plan_version(
     )
 
     if version is None:
-        raise ValueError("Care plan version not found")
+        raise NotFoundError("Care plan version not found")
 
     latest_care_plan_event = await get_latest_ai_care_plan_event(
         session=db,
@@ -140,7 +148,7 @@ async def activate_care_plan_version(
         and latest_care_plan_event.event_type
         == AiCarePlanEventType.COMPLETED
     ):
-        raise ValueError("Care plan is completed")
+        raise ConflictError("Care plan is completed")
 
     if (
         latest_care_plan_event is not None
@@ -148,7 +156,7 @@ async def activate_care_plan_version(
         == AiCarePlanEventType.ACTIVATED
         and latest_care_plan_event.version_id == version.id
     ):
-        raise ValueError(
+        raise ConflictError(
             "Care plan version is already active"
         )
 
@@ -182,10 +190,11 @@ async def create_new_care_plan_version(
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
         assignment_id=assignment_id,
+        for_update=True,
     )
 
     if care_plan is None:
-        raise ValueError("Care plan not found")
+        raise NotFoundError("Care plan not found")
 
     latest_care_plan_event = await get_latest_ai_care_plan_event(
         session=db,
@@ -197,7 +206,7 @@ async def create_new_care_plan_version(
         and latest_care_plan_event.event_type
         == AiCarePlanEventType.COMPLETED
     ):
-        raise ValueError("Care plan is completed")
+        raise ConflictError("Care plan is completed")
 
     latest_version = await get_latest_ai_care_plan_version(
         session=db,
@@ -205,7 +214,7 @@ async def create_new_care_plan_version(
     )
 
     if latest_version is None:
-        raise ValueError("Care plan has no versions")
+        raise InternalError("Care plan has no versions")
 
     version = await create_ai_care_plan_version(
         session=db,
@@ -236,10 +245,11 @@ async def pause_care_plan(
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
         assignment_id=assignment_id,
+        for_update=True,
     )
 
     if care_plan is None:
-        raise ValueError("Care plan not found")
+        raise NotFoundError("Care plan not found")
 
     latest_care_plan_event = await get_latest_ai_care_plan_event(
         session=db,
@@ -247,25 +257,25 @@ async def pause_care_plan(
     )
 
     if latest_care_plan_event is None:
-        raise ValueError("Care plan is not active")
+        raise ConflictError("Care plan is not active")
 
     if (
         latest_care_plan_event.event_type
         == AiCarePlanEventType.COMPLETED
     ):
-        raise ValueError("Care plan is completed")
+        raise ConflictError("Care plan is completed")
 
     if (
         latest_care_plan_event.event_type
         == AiCarePlanEventType.PAUSED
     ):
-        raise ValueError("Care plan is already paused")
+        raise ConflictError("Care plan is already paused")
 
     if (
         latest_care_plan_event.event_type
         != AiCarePlanEventType.ACTIVATED
     ):
-        raise ValueError("Care plan is not active")
+        raise ConflictError("Care plan is not active")
 
     event = await create_ai_care_plan_event(
         session=db,
@@ -293,20 +303,21 @@ async def complete_care_plan(
     )
 
     if assignment is None:
-        raise ValueError("Assignment not found")
+        raise NotFoundError("Assignment not found")
 
     if assignment.psychologist_id != psychologist_id:
-        raise ValueError(
+        raise ForbiddenError(
             "You are not allowed to complete this care plan"
         )
 
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
         assignment_id=assignment_id,
+        for_update=True,
     )
 
     if care_plan is None:
-        raise ValueError("Care plan not found")
+        raise NotFoundError("Care plan not found")
 
     latest_care_plan_event = await get_latest_ai_care_plan_event(
         session=db,
@@ -314,7 +325,7 @@ async def complete_care_plan(
     )
 
     if latest_care_plan_event is None:
-        raise ValueError(
+        raise ConflictError(
             "Care plan has not been activated"
         )
 
@@ -322,7 +333,7 @@ async def complete_care_plan(
         latest_care_plan_event.event_type
         == AiCarePlanEventType.COMPLETED
     ):
-        raise ValueError(
+        raise ConflictError(
             "Care plan is already completed"
         )
 
@@ -355,10 +366,10 @@ async def get_patient_care_plan(
     )
 
     if assignment is None:
-        raise ValueError("Assignment not found")
+        raise NotFoundError("Assignment not found")
 
     if assignment.patient_id != patient_id:
-        raise ValueError(
+        raise ForbiddenError(
             "You are not allowed to access this care plan"
         )
 
@@ -368,7 +379,7 @@ async def get_patient_care_plan(
     )
 
     if care_plan is None:
-        raise ValueError("Care plan not found")
+        raise NotFoundError("Care plan not found")
 
     latest_event = await get_latest_ai_care_plan_event(
         session=db,
@@ -376,7 +387,7 @@ async def get_patient_care_plan(
     )
 
     if latest_event is None:
-        raise ValueError(
+        raise ConflictError(
             "Care plan is not available yet"
         )
 
@@ -387,7 +398,7 @@ async def get_patient_care_plan(
     )
 
     if version is None:
-        raise ValueError(
+        raise InternalError(
             "Care plan version not found"
         )
 
@@ -408,10 +419,10 @@ async def get_psychologist_care_plan(
     )
 
     if assignment is None:
-        raise ValueError("Assignment not found")
+        raise NotFoundError("Assignment not found")
 
     if assignment.psychologist_id != psychologist_id:
-        raise ValueError(
+        raise ForbiddenError(
             "You are not allowed to access this care plan"
         )
 
@@ -421,7 +432,7 @@ async def get_psychologist_care_plan(
     )
 
     if care_plan is None:
-        raise ValueError("Care plan not found")
+        raise NotFoundError("Care plan not found")
 
     latest_version = await get_latest_ai_care_plan_version(
         session=db,
@@ -429,7 +440,7 @@ async def get_psychologist_care_plan(
     )
 
     if latest_version is None:
-        raise ValueError(
+        raise InternalError(
             "Care plan has no versions"
         )
 

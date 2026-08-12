@@ -53,4 +53,17 @@ def downgrade() -> None:
     op.drop_table('call_events')
     op.drop_index(op.f('ix_calls_slot_id'), table_name='calls')
     op.drop_table('calls')
+    sa.Enum(
+        name="call_event_type",
+    ).drop(
+        op.get_bind(),
+        checkfirst=True,
+    )
+
+    sa.Enum(
+        name="call_provider",
+    ).drop(
+        op.get_bind(),
+        checkfirst=True,
+    )
     # ### end Alembic commands ###

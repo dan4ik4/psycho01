@@ -48,26 +48,19 @@ async def create_care_plan_endpoint(
             detail="Only psychologists can create care plans",
         )
 
-    try:
-        care_plan, version = await create_care_plan(
-            db=db,
-            assignment_id=data.assignment_id,
-            psychologist_id=user.id,
-            instructions_for_ai=data.instructions_for_ai,
-            patient_recommendations=data.patient_recommendations,
-        )
+    care_plan, version = await create_care_plan(
+        db=db,
+        assignment_id=data.assignment_id,
+        psychologist_id=user.id,
+        instructions_for_ai=data.instructions_for_ai,
+        patient_recommendations=data.patient_recommendations,
+    )
 
-        return AiCarePlanPsychologistRead(
-            care_plan=care_plan,
-            latest_version=version,
-            latest_event=None,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return AiCarePlanPsychologistRead(
+        care_plan=care_plan,
+        latest_version=version,
+        latest_event=None,
+    )
     
 @router.post(
     "/{assignment_id}/versions",
@@ -86,20 +79,13 @@ async def create_care_plan_version_endpoint(
             detail="Only psychologists can create care plan versions",
         )
 
-    try:
-        return await create_new_care_plan_version(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-            instructions_for_ai=data.instructions_for_ai,
-            patient_recommendations=data.patient_recommendations,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await create_new_care_plan_version(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
+        instructions_for_ai=data.instructions_for_ai,
+        patient_recommendations=data.patient_recommendations,
+    )
     
 @router.post(
     "/{assignment_id}/activate",
@@ -117,20 +103,13 @@ async def activate_care_plan_version_endpoint(
             detail="Only psychologists can activate care plans",
         )
 
-    try:
-        return await activate_care_plan_version(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-            version_id=data.version_id,
-            comment=data.comment,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await activate_care_plan_version(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
+        version_id=data.version_id,
+        comment=data.comment,
+    )
     
 @router.post(
     "/{assignment_id}/pause",
@@ -148,19 +127,12 @@ async def pause_care_plan_endpoint(
             detail="Only psychologists can pause care plans",
         )
 
-    try:
-        return await pause_care_plan(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-            comment=data.comment,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await pause_care_plan(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
+        comment=data.comment,
+    )
     
 @router.post(
     "/{assignment_id}/complete",
@@ -178,19 +150,12 @@ async def complete_care_plan_endpoint(
             detail="Only psychologists can complete care plans",
         )
 
-    try:
-        return await complete_care_plan(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-            comment=data.comment,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return await complete_care_plan(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
+        comment=data.comment,
+    )
     
 @router.get(
     "/{assignment_id}/psychologist",
@@ -207,26 +172,19 @@ async def get_psychologist_care_plan_endpoint(
             detail="Only psychologists can access this care plan",
         )
 
-    try:
-        care_plan, latest_version, latest_event = (
-            await get_psychologist_care_plan(
-                db=db,
-                assignment_id=assignment_id,
-                psychologist_id=user.id,
-            )
+    care_plan, latest_version, latest_event = (
+        await get_psychologist_care_plan(
+            db=db,
+            assignment_id=assignment_id,
+            psychologist_id=user.id,
         )
+    )
 
-        return AiCarePlanPsychologistRead(
-            care_plan=care_plan,
-            latest_version=latest_version,
-            latest_event=latest_event,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return AiCarePlanPsychologistRead(
+        care_plan=care_plan,
+        latest_version=latest_version,
+        latest_event=latest_event,
+    )
     
 @router.get(
     "/{assignment_id}/patient",
@@ -243,23 +201,16 @@ async def get_patient_care_plan_endpoint(
             detail="Only patients can access this care plan",
         )
 
-    try:
-        care_plan, version, latest_event = await get_patient_care_plan(
-            db=db,
-            assignment_id=assignment_id,
-            patient_id=user.id,
-        )
+    care_plan, version, latest_event = await get_patient_care_plan(
+        db=db,
+        assignment_id=assignment_id,
+        patient_id=user.id,
+    )
 
-        return AiCarePlanPatientRead(
-            care_plan_id=care_plan.id,
-            version_id=version.id,
-            patient_recommendations=version.patient_recommendations,
-            event_type=latest_event.event_type,
-        )
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(error),
-        ) from error
+    return AiCarePlanPatientRead(
+        care_plan_id=care_plan.id,
+        version_id=version.id,
+        patient_recommendations=version.patient_recommendations,
+        event_type=latest_event.event_type,
+    )
     

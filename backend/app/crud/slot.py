@@ -2,7 +2,6 @@ import uuid
 
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
 
 from app.models.slot import Slot
 from app.models.slot_event import SlotEvent, SlotEventType

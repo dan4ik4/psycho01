@@ -3,6 +3,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.jobs.lesson_outcomes.resolve import resolve_expired_lesson_outcomes_job
 from app.jobs.pending_registrations.cleanup import run_cleanup_pending_registrations
+from app.jobs.slots.cleanup import cleanup_expired_unbooked_slots_job
+
 
 scheduler = AsyncIOScheduler()
 
@@ -22,6 +24,14 @@ def start_scheduler():
         "interval",
         minutes=5,
         id="pending_registrations_cleanup",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        cleanup_expired_unbooked_slots_job,
+        "interval",
+        hours=6,
+        id="expired_unbooked_slots_cleanup",
         replace_existing=True,
     )
 
