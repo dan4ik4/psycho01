@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from app.models.call import Call, CallProvider
 from app.models.call_event import CallEvent, CallEventType
@@ -49,6 +50,29 @@ async def create_call_event(
     return event
 
 
+async def get_latest_call_event_for_user(
+    db: AsyncSession,
+    call_id: uuid.UUID,
+    user_id: uuid.UUID,
+    booking_started_at: datetime,
+) -> CallEvent | None:
+    result = await db.execute(
+        select(CallEvent)
+        .where(
+            CallEvent.call_id == call_id,
+            CallEvent.user_id == user_id,
+            CallEvent.created_at >= booking_started_at,
+        )
+        .order_by(
+            CallEvent.created_at.desc(),
+            CallEvent.id.desc(),
+        )
+        .limit(1)
+    )
+
+    return result.scalar_one_or_none()
+
+
 async def get_call_events(
     db: AsyncSession,
     call_id: uuid.UUID,
@@ -59,3 +83,26 @@ async def get_call_events(
         .order_by(CallEvent.id)
     )
     return list(result.scalars().all())
+
+async def has_joined_call_event_for_slot(
+    db: AsyncSession,
+    slot_id: uuid.UUID,
+) -> bool:
+    joined_event_exists = (
+        select(CallEvent.id)
+        .join(
+            Call,
+            Call.id == CallEvent.call_id,
+        )
+        .where(
+            Call.slot_id == slot_id,
+            CallEvent.event_type == CallEventType.JOINED,
+        )
+        .exists()
+    )
+
+    result = await db.execute(
+        select(joined_event_exists)
+    )
+
+    return bool(result.scalar_one())

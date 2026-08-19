@@ -1,21 +1,42 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.settings import settings
-from app.core.otp import generate_code6, hash_code, verify_code
-from app.crud.pending_registration import (
-    get_pending_by_email,
-    create_pending_registration,
-    update_pending_registration_code,
-    increment_otp_attempts,
-    delete_pending_registration,
-)
-from app.crud.user import get_user_by_email, create_user
-from app.core.mailer import send_email
+from app.core.email import normalize_email
 from app.core.errors import ConflictError
-from sqlalchemy.exc import IntegrityError
+from app.core.mailer import send_email
+from app.core.otp import generate_code6, hash_code, verify_code
+from app.core.settings import settings
+from app.crud.pending_registration import (
+    create_pending_registration,
+    delete_pending_registration,
+    get_pending_by_email,
+    increment_otp_attempts,
+    update_pending_registration_code,
+)
+from app.crud.user import create_user, get_user_by_email
+
+
+async def _lock_registration_email(
+    db: AsyncSession,
+    email: str,
+) -> None:
+    await db.execute(
+        text(
+            """
+            SELECT pg_advisory_xact_lock(
+                hashtextextended(:email, 0)
+            )
+            """
+        ),
+        {
+            "email": normalize_email(email),
+        },
+    )
+
 
 async def pre_register_user(
     db: AsyncSession,
@@ -23,6 +44,13 @@ async def pre_register_user(
     email: str,
     password_hash: str,
 ) -> None:
+    email = normalize_email(email)
+
+    await _lock_registration_email(
+        db,
+        email,
+    )
+
     existing_user = await get_user_by_email(
         db,
         email,
@@ -75,12 +103,20 @@ async def pre_register_user(
 
     await db.commit()
 
+
 async def confirm_registration(
     db: AsyncSession,
     *,
     email: str,
     otp_code: str,
 ) -> None:
+    email = normalize_email(email)
+
+    await _lock_registration_email(
+        db,
+        email,
+    )
+
     pending = await get_pending_by_email(
         db,
         email,
@@ -95,7 +131,6 @@ async def confirm_registration(
 
     now = datetime.now(timezone.utc)
 
-    # проверка TTL
     expires_at = pending.last_sent_at + timedelta(
         minutes=settings.REG_CODE_TTL_MINUTES
     )
@@ -106,16 +141,21 @@ async def confirm_registration(
             detail="Code expired. Please request a new code.",
         )
 
-    # проверка attempts
     if pending.otp_attempts >= settings.REG_CODE_MAX_ATTEMPTS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Too many attempts",
         )
 
-    # проверка кода
-    if not verify_code(otp_code, pending.otp_code_hash, settings.REG_CODE_SECRET):
-        await increment_otp_attempts(db, pending)
+    if not verify_code(
+        otp_code,
+        pending.otp_code_hash,
+        settings.REG_CODE_SECRET,
+    ):
+        await increment_otp_attempts(
+            db,
+            pending,
+        )
         await db.commit()
 
         raise HTTPException(
@@ -123,23 +163,32 @@ async def confirm_registration(
             detail="Invalid code",
         )
 
-    # создаём пользователя
     await create_user(
         db,
         email=pending.email,
         hashed_password=pending.hashed_password,
     )
 
-    # удаляем pending
-    await delete_pending_registration(db, pending)
+    await delete_pending_registration(
+        db,
+        pending,
+    )
 
     await db.commit()
+
 
 async def resend_registration_code(
     db: AsyncSession,
     *,
     email: str,
 ) -> None:
+    email = normalize_email(email)
+
+    await _lock_registration_email(
+        db,
+        email,
+    )
+
     pending = await get_pending_by_email(
         db,
         email,
@@ -154,9 +203,14 @@ async def resend_registration_code(
 
     now = datetime.now(timezone.utc)
 
-    seconds_since_last_send = (now - pending.last_sent_at).total_seconds()
+    seconds_since_last_send = (
+        now - pending.last_sent_at
+    ).total_seconds()
 
-    if seconds_since_last_send < settings.REG_CODE_RESEND_COOLDOWN_SECONDS:
+    if (
+        seconds_since_last_send
+        < settings.REG_CODE_RESEND_COOLDOWN_SECONDS
+    ):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Please wait before requesting a new code",
@@ -169,7 +223,10 @@ async def resend_registration_code(
         )
 
     code = generate_code6()
-    code_hash = hash_code(code, settings.REG_CODE_SECRET)
+    code_hash = hash_code(
+        code,
+        settings.REG_CODE_SECRET,
+    )
 
     await update_pending_registration_code(
         db,
@@ -185,4 +242,3 @@ async def resend_registration_code(
     )
 
     await db.commit()
-

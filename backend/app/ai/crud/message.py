@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models.message import AiMessage, AiMessageRole
@@ -33,7 +34,10 @@ async def get_ai_messages_for_conversation(
     stmt = (
         select(AiMessage)
         .where(AiMessage.conversation_id == conversation_id)
-        .order_by(AiMessage.created_at.asc())
+        .order_by(
+            AiMessage.created_at.asc(),
+            AiMessage.id.asc(),
+        )
     )
 
     result = await session.execute(stmt)
@@ -81,13 +85,20 @@ async def get_recent_ai_messages_for_conversation(
 async def has_ai_messages_after(
     session: AsyncSession,
     conversation_id: uuid.UUID,
-    created_at,
+    message_id: uuid.UUID,
+    created_at: datetime,
 ) -> bool:
     stmt = (
         select(AiMessage.id)
         .where(
             AiMessage.conversation_id == conversation_id,
-            AiMessage.created_at > created_at,
+            or_(
+                AiMessage.created_at > created_at,
+                and_(
+                    AiMessage.created_at == created_at,
+                    AiMessage.id > message_id,
+                ),
+            ),
         )
         .limit(1)
     )
@@ -95,3 +106,4 @@ async def has_ai_messages_after(
     result = await session.execute(stmt)
 
     return result.scalar_one_or_none() is not None
+

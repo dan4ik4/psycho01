@@ -57,6 +57,16 @@ async def request_assignment(
 
     if patient is None:
         raise NotFoundError("Patient not found")
+    
+    if not patient.is_active:
+        raise ForbiddenError(
+            "Inactive user cannot request an assignment"
+        )
+
+    if patient.is_psychologist:
+        raise ForbiddenError(
+            "Psychologist cannot request an assignment"
+        )
 
     current_assignment = await get_active_or_pending_patient_assignment(
     db=db,

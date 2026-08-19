@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +27,10 @@ async def preregister(
 ) -> None:
     
     password_helper = PasswordHelper()
-    password_hash = password_helper.hash(data.password)
+    password_hash = await asyncio.to_thread(
+        password_helper.hash,
+        data.password,
+    )
 
     await pre_register_user(
         db,

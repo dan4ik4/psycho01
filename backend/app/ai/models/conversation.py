@@ -68,5 +68,5 @@ class AiConversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="AiMessage.created_at",
+        order_by="AiMessage.created_at, AiMessage.id",
     )

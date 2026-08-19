@@ -96,6 +96,7 @@ async def send_user_message(
         has_later_messages = await has_ai_messages_after(
             session=db,
             conversation_id=conversation.id,
+            message_id=existing_user_message.id,
             created_at=existing_user_message.created_at,
         )
 
@@ -140,6 +141,7 @@ async def send_user_message(
         care_plan = await get_ai_care_plan_by_assignment_id(
             session=db,
             assignment_id=conversation.assignment_id,
+            for_update=True,
         )
 
         if care_plan is None:

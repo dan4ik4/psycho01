@@ -1,21 +1,24 @@
 import asyncio
 import getpass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.auth.deps import UserManager
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+from app.core.email import normalize_email
 
 
 async def create_superuser() -> None:
-    email = input("Admin email: ").strip()
+    email = normalize_email(input("Admin email: "))
     password = getpass.getpass("Admin password: ")
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(User).where(User.email == email)
+            select(User).where(
+                func.lower(User.email) == email
+            )
         )
         existing_user = result.scalar_one_or_none()
 

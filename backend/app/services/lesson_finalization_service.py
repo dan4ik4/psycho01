@@ -79,10 +79,24 @@ async def resolve_expired_lesson_outcomes(
         for slot, _ in rows
     ]
 
+    booked_at_by_slot = {
+        slot.id: latest_event.created_at
+        for slot, latest_event in rows
+    }
+
+    join_until_by_slot = {
+        slot.id: slot.end_at
+        + timedelta(
+            minutes=settings.AGORA_JOIN_WINDOW_MINUTES,
+        )
+        for slot, _ in rows
+    }
+
     joined_result = await db.execute(
         select(
             Call.slot_id,
             CallEvent.user_id,
+            CallEvent.created_at,
         )
         .join(
             CallEvent,
@@ -92,13 +106,24 @@ async def resolve_expired_lesson_outcomes(
             Call.slot_id.in_(slot_ids),
             CallEvent.event_type == CallEventType.JOINED,
         )
-        .distinct()
     )
 
     joined_users_by_slot: dict = {}
 
-    for slot_id, user_id in joined_result.all():
+    for slot_id, user_id, joined_at in joined_result.all():
         if user_id is None:
+            continue
+
+        booked_at = booked_at_by_slot.get(slot_id)
+        join_until = join_until_by_slot.get(slot_id)
+
+        if booked_at is None or join_until is None:
+            continue
+
+        if joined_at < booked_at:
+            continue
+
+        if joined_at > join_until:
             continue
 
         joined_users_by_slot.setdefault(

@@ -10,5 +10,6 @@ class CallJoinOut(BaseModel):
     slot_id: uuid.UUID
     provider: CallProvider
     room_id: str
+    uid: int
     token: str
     app_id: str

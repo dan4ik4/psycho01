@@ -300,6 +300,7 @@ async def complete_care_plan(
     assignment = await get_assignment_by_id(
         db=db,
         assignment_id=assignment_id,
+        for_update=True,
     )
 
     if assignment is None:

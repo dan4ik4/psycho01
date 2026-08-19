@@ -23,10 +23,12 @@ from app.core.errors import (
     NotFoundError,
     ValidationError,
 )
+from app.crud.user import get_user_by_id
 from app.models.slot import Slot
 from app.models.slot_event import SlotEventType, SlotEvent
 from app.models.user import User
 from app.models.patient_assignment_event import PatientAssignmentEventType
+from app.crud.call import has_joined_call_event_for_slot
 
 #psychologist
 async def create_slot(
@@ -35,14 +37,20 @@ async def create_slot(
     start_at: datetime,
     end_at: datetime,
 ) -> Slot:
-    if not user.is_psychologist:
-        raise ForbiddenError("Only psychologists can create slots")
-    
-    await db.execute(
-        select(User)
-        .where(User.id == user.id)
-        .with_for_update()
+    locked_user = await get_user_by_id(
+        db=db,
+        user_id=user.id,
+        for_update=True,
     )
+
+    if (
+        locked_user is None
+        or not locked_user.is_active
+        or not locked_user.is_psychologist
+    ):
+        raise ForbiddenError(
+            "Only active psychologists can create slots"
+        )
     
     now = datetime.now(timezone.utc)
 
@@ -60,7 +68,7 @@ async def create_slot(
 
     slots_with_events = await get_slots_with_latest_events(
         db=db,
-        psychologist_id=user.id,
+        psychologist_id=locked_user.id,
     )
 
     for slot, latest_event in slots_with_events:
@@ -74,7 +82,7 @@ async def create_slot(
 
     slot = await create_slot_crud(
         db=db,
-        psychologist_id=user.id,
+        psychologist_id=locked_user.id,
         start_at=start_at,
         end_at=end_at,
     )
@@ -83,7 +91,7 @@ async def create_slot(
         db=db,
         slot_id=slot.id,
         event_type=SlotEventType.CREATED,
-        performed_by_id=user.id,
+        performed_by_id=locked_user.id,
     )
 
     await db.commit()
@@ -320,6 +328,16 @@ async def cancel_slot_booking(
     else:
         if latest_event.patient_id != user.id:
             raise ForbiddenError("You can cancel only your own booking")
+        
+    has_joined_participant = await has_joined_call_event_for_slot(
+        db=db,
+        slot_id=slot.id,
+    )
+
+    if has_joined_participant:
+        raise ConflictError(
+            "Booking cannot be cancelled after a participant joined the call"
+        )
 
     await create_slot_event(
         db=db,

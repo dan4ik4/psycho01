@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, DateTime
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship
@@ -11,6 +11,13 @@ from app.db.base import Base
 
 class Slot(Base):
     __tablename__ = "slots"
+
+    __table_args__ = (
+        CheckConstraint(
+            "end_at >= start_at + INTERVAL '15 minutes'",
+            name="ck_slots_minimum_duration",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

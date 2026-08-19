@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import Boolean, Date, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,3 +37,9 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         server_default="0",
         nullable=False,
     )
+
+Index(
+    "ux_users_email_lower",
+    func.lower(User.email),
+    unique=True,
+)

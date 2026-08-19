@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Integer, DateTime
+from sqlalchemy import DateTime, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,3 +50,9 @@ class PendingRegistration(Base):
         default=0,
         nullable=False
     )
+
+Index(
+    "ux_pending_registrations_email_lower",
+    func.lower(PendingRegistration.email),
+    unique=True,
+)

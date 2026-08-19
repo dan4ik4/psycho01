@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +24,10 @@ class PsychologistRating(Base):
             "patient_id",
             "psychologist_id",
             name="uq_psychologist_rating_patient_psychologist",
+        ),
+        CheckConstraint(
+            "rating >= 1 AND rating <= 5",
+            name="ck_psychologist_ratings_rating_range",
         ),
     )
 
