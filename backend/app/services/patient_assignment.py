@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.patient_assignment import PatientAssignment
 from app.models.patient_assignment_event import PatientAssignmentEventType
 from app.crud.patient_assignment import (
-    get_assignment_by_pair,
     create_assignment,
     get_latest_assignment_event,
     create_assignment_event,
@@ -18,6 +17,7 @@ from app.crud.slot import (
     get_latest_slot_event,
     create_slot_event,
 )
+from app.crud.call import has_joined_call_event_for_slot
 from app.core.errors import (
     ConflictError,
     ForbiddenError,
@@ -76,29 +76,11 @@ async def request_assignment(
     if current_assignment is not None:
         raise ConflictError("Patient already has pending or active assignment")
     
-    assignment = await get_assignment_by_pair(
+    assignment = await create_assignment(
         db=db,
         patient_id=patient_id,
         psychologist_id=psychologist_id,
     )
-
-    if assignment is None:
-        assignment = await create_assignment(
-            db=db,
-            patient_id=patient_id,
-            psychologist_id=psychologist_id,
-        )
-    else:
-        latest_event = await get_latest_assignment_event(
-            db=db,
-            assignment_id=assignment.id,
-        )
-
-        if latest_event and latest_event.event_type in (
-            PatientAssignmentEventType.REQUESTED,
-            PatientAssignmentEventType.ACCEPTED,
-        ):
-            raise ConflictError("Assignment request already exists or is active")
 
     await create_assignment_event(
         db=db,
@@ -314,6 +296,16 @@ async def finish_assignment(
             or locked_latest_event.patient_id != assignment.patient_id
         ):
             continue
+
+        has_joined_participant = await has_joined_call_event_for_slot(
+            db=db,
+            slot_id=locked_slot.id,
+        )
+
+        if has_joined_participant:
+            raise ConflictError(
+                "Assignment cannot be finished after a participant joined the call"
+            )
 
         await create_slot_event(
             db=db,

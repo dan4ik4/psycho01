@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     REG_CODE_RESEND_COOLDOWN_SECONDS: int = 60
     REG_PENDING_CLEANUP_HOURS: int = 12
 
+    AUTH_PREREGISTER_RATE_LIMIT: str = "3/minute"
+    AUTH_CONFIRM_RATE_LIMIT: str = "10/minute"
+    AUTH_RESEND_RATE_LIMIT: str = "3/minute"
+
     AGORA_APP_ID: str
     AGORA_APP_CERTIFICATE: str
     AGORA_JOIN_WINDOW_MINUTES: int = 5

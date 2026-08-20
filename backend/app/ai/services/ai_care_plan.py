@@ -297,19 +297,11 @@ async def complete_care_plan(
     psychologist_id: uuid.UUID,
     comment: str | None = None,
 ) -> AiCarePlanEvent:
-    assignment = await get_assignment_by_id(
+    await _validate_active_assignment_for_psychologist(
         db=db,
         assignment_id=assignment_id,
-        for_update=True,
+        psychologist_id=psychologist_id,
     )
-
-    if assignment is None:
-        raise NotFoundError("Assignment not found")
-
-    if assignment.psychologist_id != psychologist_id:
-        raise ForbiddenError(
-            "You are not allowed to complete this care plan"
-        )
 
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,

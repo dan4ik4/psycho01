@@ -10,20 +10,6 @@ from app.models.patient_assignment_event import (
     PatientAssignmentEventType,
 )
 
-
-async def get_assignment_by_pair(
-    db: AsyncSession,
-    patient_id: uuid.UUID,
-    psychologist_id: uuid.UUID,
-) -> PatientAssignment | None:
-    result = await db.execute(
-        select(PatientAssignment).where(
-            PatientAssignment.patient_id == patient_id,
-            PatientAssignment.psychologist_id == psychologist_id,
-        )
-    )
-    return result.scalar_one_or_none()
-
 async def get_assignment_by_id(
     db: AsyncSession,
     assignment_id: uuid.UUID,

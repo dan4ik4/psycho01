@@ -63,7 +63,7 @@ async def get_psychologist_rating_summary(
     db: AsyncSession,
     *,
     psychologist_id: uuid.UUID,
-) -> tuple[float | None, int]:
+) -> tuple[float | None, int] | None:
     result = await db.execute(
         select(
             User.average_rating,
@@ -71,18 +71,21 @@ async def get_psychologist_rating_summary(
         ).where(
             User.id == psychologist_id,
             User.is_psychologist.is_(True),
+            User.is_active.is_(True),
         )
     )
 
     rating_data = result.one_or_none()
 
     if rating_data is None:
-        return None, 0
+        return None
 
     average_rating, ratings_count = rating_data
 
     return (
-        float(average_rating) if average_rating is not None else None,
+        float(average_rating)
+        if average_rating is not None
+        else None,
         ratings_count,
     )
 

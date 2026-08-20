@@ -5,6 +5,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from app.core.rate_limiter import limiter
+
 from app.core.errors import AppError
 from app.core.settings import settings
 from app.routes import api
@@ -69,6 +74,13 @@ app = FastAPI(
     openapi_url="/openapi.json",
     debug=settings.DEBUG,
     lifespan=lifespan,
+)
+
+app.state.limiter = limiter
+
+app.add_exception_handler(
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
 )
 
 app.add_exception_handler(

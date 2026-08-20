@@ -100,13 +100,25 @@ async def get_psychologist_rating_summary_service(
     *,
     psychologist_id: uuid.UUID,
 ) -> PsychologistRatingSummary:
-    average_rating, ratings_count = await get_psychologist_rating_summary(
+    rating_summary = await get_psychologist_rating_summary(
         db,
         psychologist_id=psychologist_id,
     )
 
+    if rating_summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Psychologist not found",
+        )
+
+    average_rating, ratings_count = rating_summary
+
     return PsychologistRatingSummary(
         psychologist_id=psychologist_id,
-        average_rating=round(float(average_rating), 2) if average_rating is not None else None,
+        average_rating=(
+            round(float(average_rating), 2)
+            if average_rating is not None
+            else None
+        ),
         ratings_count=ratings_count,
     )
