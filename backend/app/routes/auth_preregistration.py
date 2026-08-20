@@ -44,11 +44,11 @@ async def preregister(
     )
 
 
-@router.post("/preregister", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit(settings.AUTH_PREREGISTER_RATE_LIMIT)
-async def preregister(
+@router.post("/confirm", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(settings.AUTH_CONFIRM_RATE_LIMIT)
+async def confirm_registration_code(
     request: Request,
-    data: PendingRegistrationCreate,
+    data: PendingRegistrationConfirm,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await confirm_registration(
