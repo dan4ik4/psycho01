@@ -64,7 +64,7 @@ fastapi==0.138.1
     # via
     #   -r requirements.in
     #   fastapi-users
-fastapi-users[sqlalchemy]==15.0.0
+fastapi-users[sqlalchemy]==15.0.5
     # via
     #   -r requirements.in
     #   fastapi-users-db-sqlalchemy
@@ -111,7 +111,7 @@ passlib[bcrypt]==1.7.4
     # via -r requirements.in
 psycopg2-binary==2.9.12
     # via -r requirements.in
-pwdlib[argon2,bcrypt]==0.2.1
+pwdlib[argon2,bcrypt]==0.3.0
     # via fastapi-users
 pycparser==3.0
     # via cffi
@@ -125,14 +125,14 @@ pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.2
     # via -r requirements.in
-pyjwt[crypto]==2.10.1
+pyjwt[crypto]==2.13.0
     # via fastapi-users
 python-dotenv==1.2.2
     # via
     #   -r requirements.in
     #   pydantic-settings
     #   uvicorn
-python-multipart==0.0.20
+python-multipart==0.0.32
     # via
     #   fastapi-users
     #   sqladmin

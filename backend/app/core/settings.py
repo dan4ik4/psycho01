@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     AUTH_PREREGISTER_RATE_LIMIT: str = "3/minute"
     AUTH_CONFIRM_RATE_LIMIT: str = "10/minute"
     AUTH_RESEND_RATE_LIMIT: str = "3/minute"
+    AUTH_LOGIN_RATE_LIMIT: str = "5/minute"
+    AUTH_FORGOT_PASSWORD_IP_RATE_LIMIT: str = "10/minute"
+    AUTH_FORGOT_PASSWORD_EMAIL_RATE_LIMIT: str = "3/hour"
 
     AGORA_APP_ID: str
     AGORA_APP_CERTIFICATE: str

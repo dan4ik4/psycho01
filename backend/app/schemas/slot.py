@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 from app.models.slot_event import SlotEventType
 
 
@@ -39,7 +39,23 @@ class SlotOut(BaseModel):
     }
 
 class SlotAction(BaseModel):
-    comment: str | None = None
+    comment: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+
+    @field_validator("comment")
+    @classmethod
+    def normalize_comment(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        normalized_comment = value.strip()
+
+        return normalized_comment or None
     
 class SlotEventOut(BaseModel):
     id: uuid.UUID

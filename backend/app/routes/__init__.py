@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 
-from app.auth.deps import auth_backend, fastapi_users
 from app.routes.health import router as health_router
 from app.routes.auth_preregistration import router as auth_preregister_router
 from app.routes.user import router as users_me_router
@@ -10,6 +9,8 @@ from .psychologist_rating import router as psychologist_rating_router
 from .patient_assignment import router as patient_assignment_router
 from .slot import router as slot_router
 from .call import router as call_router
+from app.routes.auth_login import router as auth_login_router
+from app.routes.auth_password_reset import router as auth_password_reset_router
 
 api = APIRouter(prefix="/api/v1")
 
@@ -34,18 +35,11 @@ api.include_router(psychologist_rating_router)
 #slots
 api.include_router(slot_router)
 
-# auth (fastapi-users)
-api.include_router(
-    fastapi_users.get_auth_router(auth_backend),
-    prefix="/auth/jwt",
-    tags=["auth"],
-)
+#login
+api.include_router(auth_login_router)
 
-api.include_router(
-    fastapi_users.get_reset_password_router(),
-    prefix="/auth",
-    tags=["auth"],
-)
+#password reset
+api.include_router(auth_password_reset_router)
 
 #call
 api.include_router(call_router)

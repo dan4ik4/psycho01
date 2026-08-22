@@ -1,23 +1,41 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, StringConstraints
+
+
+AssignmentRequestComment = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=20,
+        max_length=2000,
+    ),
+]
+
+RequiredAssignmentComment = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=2000,
+    ),
+]
 
 
 class PatientAssignmentRequestCreate(BaseModel):
     psychologist_id: uuid.UUID
-    comment: str = Field(
-    min_length=20,
-    max_length=2000,
-)
+    comment: AssignmentRequestComment
 
 
 class PatientAssignmentReject(BaseModel):
-    comment: str
+    comment: RequiredAssignmentComment
 
 
 class PatientAssignmentFinish(BaseModel):
-    comment: str
+    comment: RequiredAssignmentComment
 
 
 class PatientAssignmentOut(BaseModel):

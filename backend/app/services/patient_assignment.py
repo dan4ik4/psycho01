@@ -27,6 +27,18 @@ from app.core.errors import (
 from app.models.slot_event import SlotEventType
 from app.crud.user import get_user_by_id
 
+
+def _normalize_required_comment(
+    comment: str,
+) -> str:
+    normalized_comment = comment.strip()
+
+    if not normalized_comment:
+        raise ValidationError("Comment is required")
+
+    return normalized_comment
+
+
 async def request_assignment(
     db: AsyncSession,
     patient_id: uuid.UUID,
@@ -46,8 +58,7 @@ async def request_assignment(
     ):
         raise NotFoundError("Psychologist not found")
     
-    if not comment.strip():
-        raise ValidationError("Comment is required")
+    comment = _normalize_required_comment(comment)
     
     patient = await get_user_by_id(
         db=db,
@@ -95,14 +106,14 @@ async def request_assignment(
 
     return assignment
 
+
 async def reject_assignment(
     db: AsyncSession,
     assignment_id: uuid.UUID,
     psychologist_id: uuid.UUID,
     comment: str,
 ) -> PatientAssignment:
-    if not comment.strip():
-        raise ValidationError("Comment is required")
+    comment = _normalize_required_comment(comment)
     
     assignment = await get_assignment_by_id(
         db=db,
@@ -212,14 +223,14 @@ async def accept_assignment(
 
     return assignment
 
+
 async def finish_assignment(
     db: AsyncSession,
     assignment_id: uuid.UUID,
     performed_by_id: uuid.UUID,
     comment: str,
 ) -> PatientAssignment:
-    if not comment.strip():
-        raise ValidationError("Comment is required")
+    comment = _normalize_required_comment(comment)
 
     assignment = await get_assignment_by_id(
         db=db,
@@ -334,12 +345,16 @@ async def finish_assignment(
 
     return assignment
 
+
 async def cancel_assignment(
     db: AsyncSession,
     assignment_id: uuid.UUID,
     patient_id: uuid.UUID,
-    comment: str | None = None,
+    comment: str,
 ) -> PatientAssignment:
+    
+    comment = _normalize_required_comment(comment)
+    
     assignment = await get_assignment_by_id(
         db=db,
         assignment_id=assignment_id,

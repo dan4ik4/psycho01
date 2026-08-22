@@ -152,11 +152,16 @@ async def remove_slot(
     if latest_event is None:
         raise ConflictError("Slot has no events")
 
-    if latest_event.event_type == SlotEventType.BOOKED:
-        raise ConflictError("Booked slot cannot be removed")
-
     if latest_event.event_type == SlotEventType.REMOVED:
         raise ConflictError("Slot is already removed")
+
+    if latest_event.event_type not in (
+        SlotEventType.CREATED,
+        SlotEventType.CANCELLED,
+    ):
+        raise ConflictError(
+            "Only available slot can be removed"
+        )
 
     await create_slot_event(
         db=db,
@@ -318,12 +323,21 @@ async def cancel_slot_booking(
 
     if latest_event is None or latest_event.event_type != SlotEventType.BOOKED:
         raise ConflictError("Slot is not booked")
+    
+    normalized_comment = (
+        comment.strip()
+        if comment is not None
+        else None
+    )
+
+    if normalized_comment == "":
+        normalized_comment = None
 
     if user.is_psychologist:
         if slot.psychologist_id != user.id:
             raise ForbiddenError("You can cancel only your own slot")
 
-        if not comment:
+        if normalized_comment is None:
             raise ValidationError("Comment is required for psychologist cancellation")
     else:
         if latest_event.patient_id != user.id:
@@ -345,7 +359,7 @@ async def cancel_slot_booking(
         event_type=SlotEventType.CANCELLED,
         patient_id=latest_event.patient_id,
         performed_by_id=user.id,
-        comment=comment,
+        comment=normalized_comment,
     )
 
     await db.commit()
