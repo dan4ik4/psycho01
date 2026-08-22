@@ -30,6 +30,28 @@ from app.models.user import User
 from app.models.patient_assignment_event import PatientAssignmentEventType
 from app.crud.call import has_joined_call_event_for_slot
 
+
+def _normalize_optional_comment(
+    comment: str | None,
+    *,
+    max_length: int = 2000,
+) -> str | None:
+    if comment is None:
+        return None
+
+    normalized_comment = comment.strip()
+
+    if not normalized_comment:
+        return None
+
+    if len(normalized_comment) > max_length:
+        raise ValidationError(
+            f"Comment must contain no more than {max_length} characters"
+        )
+
+    return normalized_comment
+
+
 #psychologist
 async def create_slot(
     db: AsyncSession,
@@ -131,6 +153,8 @@ async def remove_slot(
 ) -> Slot:
     if not user.is_psychologist:
         raise ForbiddenError("Only psychologists can remove slots")
+    
+    comment = _normalize_optional_comment(comment)
 
     slot = await get_slot_by_id(
         db=db,
@@ -324,14 +348,7 @@ async def cancel_slot_booking(
     if latest_event is None or latest_event.event_type != SlotEventType.BOOKED:
         raise ConflictError("Slot is not booked")
     
-    normalized_comment = (
-        comment.strip()
-        if comment is not None
-        else None
-    )
-
-    if normalized_comment == "":
-        normalized_comment = None
+    normalized_comment = _normalize_optional_comment(comment)
 
     if user.is_psychologist:
         if slot.psychologist_id != user.id:

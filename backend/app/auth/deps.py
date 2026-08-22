@@ -1,5 +1,5 @@
 import uuid
-from fastapi_users import FastAPIUsers
+from fastapi_users import FastAPIUsers, exceptions
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from fastapi_users.jwt import SecretType
@@ -48,9 +48,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         user: User | None = None,
     ) -> None:
         if len(password) < 8:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Пароль должен содержать минимум 8 символов",
+            raise exceptions.InvalidPasswordException(
+                reason="Password should be at least 8 characters",
             )
 
 

@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.patient_assignment import PatientAssignment
@@ -29,12 +28,28 @@ from app.crud.user import get_user_by_id
 
 
 def _normalize_required_comment(
-    comment: str,
+    comment: str | None,
+    *,
+    min_length: int = 1,
+    max_length: int = 2000,
 ) -> str:
+    if comment is None:
+        raise ValidationError("Comment is required")
+
     normalized_comment = comment.strip()
 
     if not normalized_comment:
         raise ValidationError("Comment is required")
+
+    if len(normalized_comment) < min_length:
+        raise ValidationError(
+            f"Comment must contain at least {min_length} characters"
+        )
+
+    if len(normalized_comment) > max_length:
+        raise ValidationError(
+            f"Comment must contain no more than {max_length} characters"
+        )
 
     return normalized_comment
 
@@ -58,7 +73,10 @@ async def request_assignment(
     ):
         raise NotFoundError("Psychologist not found")
     
-    comment = _normalize_required_comment(comment)
+    comment = _normalize_required_comment(
+        comment,
+        min_length=20,
+    )
     
     patient = await get_user_by_id(
         db=db,
@@ -270,8 +288,6 @@ async def finish_assignment(
 
     if latest_event is None or latest_event.event_type != PatientAssignmentEventType.ACCEPTED:
         raise ConflictError("Assignment is not active")
-    
-    now = datetime.now(timezone.utc)
 
     slots_with_events = await get_slots_with_latest_events(
         db=db,
@@ -280,8 +296,7 @@ async def finish_assignment(
 
     for slot, latest_slot_event in slots_with_events:
         if (
-            slot.start_at <= now
-            or latest_slot_event is None
+            latest_slot_event is None
             or latest_slot_event.event_type != SlotEventType.BOOKED
             or latest_slot_event.patient_id != assignment.patient_id
         ):
@@ -354,7 +369,7 @@ async def cancel_assignment(
 ) -> PatientAssignment:
     
     comment = _normalize_required_comment(comment)
-    
+
     assignment = await get_assignment_by_id(
         db=db,
         assignment_id=assignment_id,
