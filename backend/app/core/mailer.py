@@ -6,6 +6,9 @@ from app.core.settings import settings
 
 
 async def send_email(to: str, subject: str, text: str) -> None:
+    if settings.TEST_MODE:
+        # Local tests must not send real email. Use seeded accounts for the demo.
+        return
     resend.api_key = settings.RESEND_API_KEY
 
     params: resend.Emails.SendParams = {

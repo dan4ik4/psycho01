@@ -1,6 +1,11 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+class BookingRequest(BaseModel):
+    request_id: uuid.UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_db
@@ -84,17 +89,16 @@ async def get_available_slots_endpoint(
     )
 
 
-@router.post("/{slot_id}/book", response_model=SlotOut)
+@router.post("/{slot_id}/book")
 async def book_slot_endpoint(
     slot_id: uuid.UUID,
+    data: BookingRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
-    return await book_slot(
-        db=db,
-        slot_id=slot_id,
-        user=user,
-    )
+    from app.billing.service import booking_view
+    booking = await book_slot(db=db, slot_id=slot_id, user=user, request_id=data.request_id)
+    return await booking_view(db, booking)
 
 
 @router.post("/{slot_id}/cancel", response_model=SlotOut)

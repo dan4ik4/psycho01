@@ -333,6 +333,8 @@ async def finish_assignment(
                 "Assignment cannot be finished after a participant joined the call"
             )
 
+        from app.billing.service import cancel_finances
+        await cancel_finances(db, slot.id)
         await create_slot_event(
             db=db,
             slot_id=slot.id,
@@ -341,6 +343,15 @@ async def finish_assignment(
             performed_by_id=performed_by_id,
             comment="Automatically cancelled because assignment was finished",
         )
+
+    from app.billing.models import Booking
+    from sqlalchemy import select
+    pending = (await db.scalars(select(Booking).where(Booking.assignment_id == assignment_id, Booking.status == "pending").order_by(Booking.slot_id))).all()
+    for reservation in pending:
+        await get_slot_by_id(db, reservation.slot_id, for_update=True)
+        await db.refresh(reservation)
+        if reservation.status == "pending":
+            reservation.status = "cancelled"
 
     await create_assignment_event(
         db=db,

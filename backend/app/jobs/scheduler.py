@@ -10,6 +10,8 @@ scheduler = AsyncIOScheduler()
 
 
 def start_scheduler():
+    from app.billing.jobs import billing_job
+    scheduler.add_job(billing_job, "interval", seconds=30, id="billing", replace_existing=True, max_instances=1)
     
     scheduler.add_job(
         resolve_expired_lesson_outcomes_job,

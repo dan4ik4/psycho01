@@ -68,6 +68,8 @@ async def join_call(
         raise ForbiddenError("You are not allowed to join this call")
 
     now = datetime.now(timezone.utc)
+    from app.billing.service import assert_call_paid
+    await assert_call_paid(db, latest_slot_event)
 
     join_from = slot.start_at - timedelta(
         minutes=settings.AGORA_JOIN_WINDOW_MINUTES,

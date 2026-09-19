@@ -152,6 +152,9 @@ async def resolve_expired_lesson_outcomes(
             slot.psychologist_id in joined_users
         )
 
+        from app.billing.service import finalize_finances
+        await finalize_finances(db, slot.id, latest_event.id, patient_joined, psychologist_joined)
+
         if patient_joined and psychologist_joined:
             event_type = SlotEventType.COMPLETED
             comment = (

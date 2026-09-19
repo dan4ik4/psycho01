@@ -23,12 +23,14 @@ logger = logging.getLogger("uvicorn.error")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    start_scheduler()
+    if settings.SCHEDULER_ENABLED:
+        start_scheduler()
 
     try:
         yield
     finally:
-        stop_scheduler()
+        if settings.SCHEDULER_ENABLED:
+            stop_scheduler()
         await close_openai_client()
 
 
@@ -63,6 +65,7 @@ async def app_error_handler(
         status_code=exc.status_code,
         content={
             "detail": detail,
+            **({"code": exc.code, **exc.context} if hasattr(exc, "code") else {}),
         },
     )
 
@@ -90,6 +93,7 @@ app.add_exception_handler(
 
 app.include_router(api)
 app.include_router(ai_api)
+
 
 app.add_middleware(
     BaseHTTPMiddleware,

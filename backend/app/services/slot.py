@@ -187,6 +187,13 @@ async def remove_slot(
             "Only available slot can be removed"
         )
 
+    from app.billing.service import active_booking
+    pending = await active_booking(db, slot.id)
+    if pending and pending.status == "pending" and pending.hold_until > datetime.now(timezone.utc):
+        raise ConflictError("Slot has a pending payment reservation")
+    if pending and pending.status == "pending":
+        pending.status = "expired"
+
     await create_slot_event(
         db=db,
         slot_id=slot.id,
@@ -227,12 +234,14 @@ async def get_available_slots(
     )
 
     now = datetime.now(timezone.utc)
+    from app.billing.models import Booking
+    reserved = set((await db.scalars(select(Booking.slot_id).where(Booking.status == "pending", Booking.hold_until > now))).all())
 
     return [
         slot
         for slot, latest_event in slots_with_events
         if (
-            slot.start_at > now
+            slot.id not in reserved and slot.start_at > now
             and latest_event is not None
             and latest_event.event_type in (
                 SlotEventType.CREATED,
@@ -241,86 +250,9 @@ async def get_available_slots(
         )
     ]
 
-async def book_slot(
-    db: AsyncSession,
-    slot_id: uuid.UUID,
-    user: User,
-) -> Slot:
-    if user.is_psychologist:
-        raise ForbiddenError("Only patients can book slots")
-
-    assignment_data = await get_latest_patient_assignment(
-        db=db,
-        patient_id=user.id,
-    )
-
-    if assignment_data is None:
-        raise ConflictError("Patient has no assignment")
-
-    assignment, _ = assignment_data
-
-    assignment = await get_assignment_by_id(
-        db=db,
-        assignment_id=assignment.id,
-        for_update=True,
-    )
-
-    if assignment is None:
-        raise ConflictError("Patient has no assignment")
-
-    latest_assignment_event = await get_latest_assignment_event(
-        db=db,
-        assignment_id=assignment.id,
-    )
-
-    if (
-        latest_assignment_event is None
-        or latest_assignment_event.event_type
-        != PatientAssignmentEventType.ACCEPTED
-    ):
-        raise ConflictError("Patient has no active assignment")
-    
-    slot = await get_slot_by_id(
-        db=db,
-        slot_id=slot_id,
-        for_update=True
-    )
-
-    if slot is None:
-        raise NotFoundError("Slot not found")
-
-    if slot.start_at <= datetime.now(timezone.utc):
-        raise ConflictError("Cannot book slot in the past")
-
-    if slot.psychologist_id != assignment.psychologist_id:
-        raise ConflictError("Slot does not belong to patient's psychologist")
-
-    latest_slot_event = await get_latest_slot_event(
-        db=db,
-        slot_id=slot_id,
-    )
-
-    if (
-        latest_slot_event is None
-        or latest_slot_event.event_type not in (
-            SlotEventType.CREATED,
-            SlotEventType.CANCELLED,
-        )
-    ):
-        raise ConflictError("Slot is not available")
-
-    await create_slot_event(
-        db=db,
-        slot_id=slot_id,
-        event_type=SlotEventType.BOOKED,
-        patient_id=user.id,
-        performed_by_id=user.id,
-    )
-
-    await db.commit()
-    await db.refresh(slot)
-
-    return slot
+async def book_slot(db: AsyncSession, slot_id: uuid.UUID, user: User, request_id: uuid.UUID):
+    from app.billing.service import reserve_booking
+    return await reserve_booking(db, slot_id, user, request_id)
 
 async def cancel_slot_booking(
     db: AsyncSession,
@@ -369,6 +301,9 @@ async def cancel_slot_booking(
         raise ConflictError(
             "Booking cannot be cancelled after a participant joined the call"
         )
+
+    from app.billing.service import cancel_finances
+    await cancel_finances(db, slot_id)
 
     await create_slot_event(
         db=db,
@@ -426,6 +361,8 @@ async def cleanup_expired_unbooked_slots(
         days=retention_days,
     )
 
+    from app.billing.models import Booking
+    financial_history = exists(select(Booking.id).where(Booking.slot_id == Slot.id))
     booked_event_exists = exists(
         select(SlotEvent.id).where(
             SlotEvent.slot_id == Slot.id,
@@ -438,6 +375,7 @@ async def cleanup_expired_unbooked_slots(
         .where(
             Slot.end_at < cutoff,
             ~booked_event_exists,
+            ~financial_history,
         )
         .order_by(Slot.end_at.asc())
         .limit(limit)

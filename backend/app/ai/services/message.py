@@ -36,6 +36,7 @@ from app.core.errors import (
 )
 from app.models.patient_assignment_event import PatientAssignmentEventType
 from app.models.user import User
+from app.billing.access import lock_account, require_paid, quota_for_message
 
 
 async def send_user_message(
@@ -50,6 +51,7 @@ async def send_user_message(
             "Only patients can use AI conversations"
         )
 
+    await lock_account(db, user.id)
     conversation = await get_ai_conversation_for_patient(
         session=db,
         conversation_id=conversation_id,
@@ -108,6 +110,7 @@ async def send_user_message(
     guided_instructions = None
 
     if conversation.mode == AiConversationMode.GUIDED:
+        await require_paid(db, user.id)
         if conversation.assignment_id is None:
             raise ConflictError(
                 "Guided conversation has no psychologist assignment"
@@ -178,6 +181,8 @@ async def send_user_message(
             active_version.instructions_for_ai
         )
 
+    usage = await quota_for_message(db, user.id)
+
     if existing_user_message is not None:
         user_message = existing_user_message
     else:
@@ -229,6 +234,8 @@ async def send_user_message(
         request_id=request_id,
     )
 
+    if usage is not None:
+        usage.used += 1
     await db.commit()
 
     await db.refresh(user_message)

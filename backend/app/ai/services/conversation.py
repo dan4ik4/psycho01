@@ -27,6 +27,7 @@ from app.core.errors import (
     ValidationError,
 )
 from app.ai.models.ai_care_plan import AiCarePlanEventType
+from app.billing.access import require_paid
 
 
 async def create_conversation(
@@ -50,6 +51,7 @@ async def create_conversation(
     assignment_id = None
 
     if mode == AiConversationMode.GUIDED:
+        await require_paid(db, user.id)
         assignment_data = await get_latest_patient_assignment(
             db=db,
             patient_id=user.id,
@@ -79,7 +81,7 @@ async def create_conversation(
         )
 
         if (
-            latest_event.event_type
+            latest_event is None or latest_event.event_type
             != PatientAssignmentEventType.ACCEPTED
         ):
             raise ConflictError(

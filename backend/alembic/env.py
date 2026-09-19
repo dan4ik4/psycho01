@@ -13,6 +13,7 @@ sys.path.append(
 from app.db.base import Base
 import app.models
 import app.ai.models
+import app.billing.models
 
 
 class AlembicDatabaseSettings(BaseSettings):

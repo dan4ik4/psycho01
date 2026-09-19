@@ -45,7 +45,7 @@ async def generate_ai_reply(
     if not messages:
         raise ValueError("Message history cannot be empty")
 
-    if settings.AI_MOCK_MODE:
+    if settings.TEST_MODE:
         last_user_message = next(
             (
                 message["content"]

@@ -5,6 +5,8 @@ def generate_agora_channel_name(call_id: str) -> str:
     return f"call_{call_id}"
 
 def generate_agora_token(channel_name: str, uid: int, expire_timestamp: int) -> str:
+    if settings.TEST_MODE:
+        return f"mock_agora_{channel_name}_{uid}"
     token = RtcTokenBuilder.buildTokenWithUid(
         settings.AGORA_APP_ID,
         settings.AGORA_APP_CERTIFICATE,

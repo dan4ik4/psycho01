@@ -11,6 +11,11 @@ build/
 # Virtual environments
 venv/
 .env
+.env.local
+.runtime/
+.pytest_cache/
+pytest-cache-files-*/
+.ruff_cache/
 .venv/
 env/
 ENV/

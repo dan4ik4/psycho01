@@ -13,6 +13,8 @@ from app.routes.auth_login import router as auth_login_router
 from app.routes.auth_password_reset import router as auth_password_reset_router
 
 api = APIRouter(prefix="/api/v1")
+from app.billing.routes import router as billing_router
+api.include_router(billing_router)
 
 # health
 api.include_router(health_router)

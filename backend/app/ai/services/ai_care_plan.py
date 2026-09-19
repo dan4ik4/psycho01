@@ -366,6 +366,9 @@ async def get_patient_care_plan(
             "You are not allowed to access this care plan"
         )
 
+    from app.billing.access import require_paid
+    await require_paid(db, patient_id)
+
     care_plan = await get_ai_care_plan_by_assignment_id(
         session=db,
         assignment_id=assignment_id,
