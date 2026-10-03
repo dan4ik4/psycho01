@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/api/api_exception.dart';
+import '../main.dart';
 import 'main_navigation_screen.dart';
 
 enum AuthStep { login, registerEmail, registerOTP, registerProfile, forgotPasswordEmail, forgotPasswordOTP, resetPassword }
@@ -14,8 +16,6 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
-  final supabase = Supabase.instance.client;
-
   // Контроллеры
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -25,19 +25,19 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   final ageController = TextEditingController();
 
   bool isLogin = true;
+  bool isLoading = false;
   String? selectedGender;
   String selectedRole = 'client';
   AuthStep currentStep = AuthStep.login;
 
   final _formKey = GlobalKey<FormState>();
 
-  // Обновленная цветовая палитра
+  // Цветовая палитра
   final Color deepPurple = const Color(0xFFB0A6E8);
   final Color accentPurple = const Color(0xFF7862D6);
-  final Color warmWhite = const Color(0xFFF6F8FD); // Обновленный цвет
+  final Color warmWhite = const Color(0xFFF6F8FD);
   final Color textPrimary = const Color(0xFF323045);
   final Color textSecondary = const Color(0xFF706D8C);
-  final Color weekendRed = const Color(0xFFFF8A80);
 
   @override
   void initState() {
@@ -54,7 +54,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     ));
   }
 
-  // Очистка всех полей ввода
   void _clearInputs() {
     emailController.clear();
     passwordController.clear();
@@ -66,79 +65,108 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     selectedRole = 'client';
   }
 
-  // --- ЛОГИКА SUPABASE ---
+  String _extractErrorMessage(dynamic e) {
+    if (e is ApiException) {
+      return e.message;
+    }
+    return e.toString();
+  }
+
+  // --- ЛОГИКА FASTAPI REST API (Через AuthRepository) ---
 
   Future<void> _startSignUp() async {
     try {
-      await supabase.auth.signUp(email: emailController.text.trim(), password: passwordController.text);
+      await authRepository.preRegister(
+        emailController.text.trim(),
+        passwordController.text,
+      );
       setState(() => currentStep = AuthStep.registerOTP);
-    } catch (e) { _showError(e.toString()); }
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
   }
 
   Future<void> _verifySignUpOTP() async {
     try {
-      await supabase.auth.verifyOTP(email: emailController.text.trim(), token: otpController.text.trim(), type: OtpType.signup);
+      await authRepository.verifySignUpOtp(
+        emailController.text.trim(),
+        otpController.text.trim(),
+      );
       setState(() => currentStep = AuthStep.registerProfile);
-    } catch (e) { _showError("Неверный код подтверждения"); }
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
   }
 
   Future<void> _completeProfile() async {
     try {
       if (selectedGender == null) throw "Выберите пол";
-      await supabase.auth.updateUser(UserAttributes(data: {
-        'full_name': fioController.text.trim(),
-        'gender': selectedGender,
-        'age': int.parse(ageController.text.trim()),
-        'role': selectedRole,
-      }));
+      await authRepository.completeProfile(
+        fullName: fioController.text.trim(),
+        gender: selectedGender!,
+        age: int.parse(ageController.text.trim()),
+        role: selectedRole,
+      );
       _navigateToHome(selectedRole);
-    } catch (e) { _showError(e.toString()); }
-  }
-
-  // API ЗАПРОС 1: Запрос ссылки на восстановление
-  Future<void> _sendPasswordReset() async {
-    try {
-      await supabase.auth.resetPasswordForEmail(
-        emailController.text.trim(),
-        redirectTo: 'soulbuddy://reset-password', // Ссылка для возврата в приложение
-      );
-      setState(() => currentStep = AuthStep.forgotPasswordOTP);
-    } catch (e) { _showError(e.toString()); }
-  }
-
-  // Проверка токена (если введен вручную из URL)
-  Future<void> _verifyResetOTP() async {
-    try {
-      await supabase.auth.verifyOTP(
-          email: emailController.text.trim(),
-          token: otpController.text.trim(),
-          type: OtpType.recovery
-      );
-      setState(() => currentStep = AuthStep.resetPassword);
-    } catch (e) { _showError("Неверный токен или срок его действия истек"); }
-  }
-
-  // API ЗАПРОС 2: Обновление пароля (после успеха кидает на логин/главную)
-  Future<void> _updatePassword() async {
-    if (passwordController.text != confirmPasswordController.text) { _showError("Пароли не совпадают"); return; }
-    try {
-      await supabase.auth.updateUser(UserAttributes(password: passwordController.text));
-      _showError("Пароль успешно изменен");
-      _clearInputs();
-      setState(() => currentStep = AuthStep.login); // Возврат на логин после успеха
-    } catch (e) { _showError(e.toString()); }
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
   }
 
   Future<void> _login() async {
     try {
-      await supabase.auth.signInWithPassword(email: emailController.text.trim(), password: passwordController.text);
-      _navigateToHome();
-    } catch (e) { _showError("Ошибка входа: проверьте Email и пароль"); }
+      final userRole = await authRepository.login(
+        emailController.text.trim(),
+        passwordController.text,
+      );
+      _navigateToHome(userRole);
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    try {
+      await authRepository.sendPasswordReset(emailController.text.trim());
+      setState(() => currentStep = AuthStep.forgotPasswordOTP);
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
+  }
+
+  Future<void> _verifyResetOTP() async {
+    try {
+      await authRepository.verifyResetOtp(
+        emailController.text.trim(),
+        otpController.text.trim(),
+      );
+      setState(() => currentStep = AuthStep.resetPassword);
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
+  }
+
+  Future<void> _updatePassword() async {
+    if (passwordController.text != confirmPasswordController.text) {
+      _showError("Пароли не совпадают");
+      return;
+    }
+    try {
+      await authRepository.updatePassword(passwordController.text);
+      _showError("Пароль успешно изменен");
+      _clearInputs();
+      setState(() => currentStep = AuthStep.login);
+    } catch (e) {
+      _showError(_extractErrorMessage(e));
+    }
   }
 
   void _navigateToHome([String? role]) {
     if (!mounted) return;
-    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MainNavigationScreen(forcedRole: role)));
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => MainNavigationScreen(forcedRole: role))
+    );
   }
 
   void _showError(String msg) {
@@ -207,9 +235,9 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                                 if (currentStep == AuthStep.registerEmail) _buildPasswordField(passwordController, "Пароль", obscurePassword, (v) => setDialogState(() => obscurePassword = v)),
                               ],
                               if (currentStep == AuthStep.registerOTP || currentStep == AuthStep.forgotPasswordOTP) ...[
-                                Text(currentStep == AuthStep.forgotPasswordOTP ? "Введите токен из ссылки в письме" : "Введите код подтверждения", textAlign: TextAlign.center, style: TextStyle(color: textSecondary)),
+                                Text(currentStep == AuthStep.forgotPasswordOTP ? "Введите код из письма" : "Введите 6-значный код", textAlign: TextAlign.center, style: TextStyle(color: textSecondary)),
                                 const SizedBox(height: 10),
-                                _buildTextField(otpController, 'Токен/Код', Icons.vpn_key_outlined),
+                                _buildTextField(otpController, 'Код подтверждения', Icons.vpn_key_outlined, isNum: true),
                               ],
                               if (currentStep == AuthStep.registerProfile) ...[
                                 _buildSectionTitle("Ваша роль:"),
@@ -239,8 +267,12 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                           elevation: 4,
                         ),
-                        onPressed: () async {
+                        onPressed: isLoading
+                            ? null
+                            : () async {
                           if (!_formKey.currentState!.validate()) return;
+                          setDialogState(() => isLoading = true);
+
                           if (currentStep == AuthStep.login) await _login();
                           else if (currentStep == AuthStep.registerEmail) await _startSignUp();
                           else if (currentStep == AuthStep.registerOTP) await _verifySignUpOTP();
@@ -248,9 +280,12 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                           else if (currentStep == AuthStep.forgotPasswordEmail) await _sendPasswordReset();
                           else if (currentStep == AuthStep.forgotPasswordOTP) await _verifyResetOTP();
                           else if (currentStep == AuthStep.resetPassword) await _updatePassword();
-                          setDialogState(() {});
+
+                          setDialogState(() => isLoading = false);
                         },
-                        child: Text(_getButtonText(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                        child: isLoading
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : Text(_getButtonText(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                       ),
                       TextButton(
                         onPressed: () {
@@ -387,14 +422,14 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       case AuthStep.registerOTP: return "Подтверждение";
       case AuthStep.registerProfile: return "Ваш профиль";
       case AuthStep.forgotPasswordEmail: return "Сброс пароля";
-      case AuthStep.forgotPasswordOTP: return "Ввод токена";
+      case AuthStep.forgotPasswordOTP: return "Ввод кода";
       case AuthStep.resetPassword: return "Новый пароль";
     }
   }
 
   String _getButtonText() {
     if (currentStep == AuthStep.registerOTP || currentStep == AuthStep.forgotPasswordOTP) return "Проверить";
-    if (currentStep == AuthStep.forgotPasswordEmail) return "Отправить ссылку";
+    if (currentStep == AuthStep.forgotPasswordEmail) return "Отправить код";
     if (currentStep == AuthStep.registerEmail) return "Далее";
     if (currentStep == AuthStep.resetPassword) return "Обновить пароль";
     return isLogin ? "Войти" : "Продолжить";
@@ -477,7 +512,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   );
 }
 
-// --- АНИМАЦИЯ ПЫЛИ ---
 class _InfiniteDustOrbit extends StatefulWidget {
   final Color color;
   const _InfiniteDustOrbit({required this.color});

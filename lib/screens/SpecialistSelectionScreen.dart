@@ -11,6 +11,9 @@ const Color kTextPrimary = Color(0xFF323045);
 const Color kTextSecondary = Color(0xFF706D8C);
 const Color kWeekendRed = Color(0xFFFF8A80);
 
+// ==========================================
+// 1. Обновленная модель Specialist
+// ==========================================
 class Specialist {
   final String id;
   final String name;
@@ -22,12 +25,67 @@ class Specialist {
   final List<String> categories;
 
   Specialist({
-    required this.id, required this.name, required this.bio,
-    required this.spec, required this.price, required this.image,
-    required this.rating, required this.categories,
+    required this.id,
+    required this.name,
+    required this.bio,
+    required this.spec,
+    required this.price,
+    required this.image,
+    required this.rating,
+    required this.categories,
   });
+
+  factory Specialist.fromJson(Map<String, dynamic> json) {
+    return Specialist(
+      id: json['id']?.toString() ?? '',
+      name: json['name'] ?? '',
+      bio: json['bio'] ?? '',
+      spec: json['spec'] ?? json['specialization'] ?? '',
+      price: json['price']?.toString() ?? '0',
+      image: json['image'] ?? 'https://i.pravatar.cc/150',
+      rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
+      categories: json['categories'] != null
+          ? List<String>.from(json['categories'])
+          : ["Все"],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'bio': bio,
+    'spec': spec,
+    'price': price,
+    'image': image,
+    'rating': rating,
+    'categories': categories,
+  };
 }
 
+// ==========================================
+// 2. Репозиторий для работы с данными
+// ==========================================
+class SpecialistRepository {
+  Future<List<Specialist>> fetchSpecialists() async {
+    // В будущем здесь будет сетевой запрос: final response = await http.get(...);
+    await Future.delayed(const Duration(milliseconds: 600)); // Имитация задержки сети
+
+    // Возвращаем тестовые данные (или данные с сервера)
+    return [
+      Specialist(id: "1", name: "Елена Маркова", spec: "Гештальт-терапевт", bio: "Специализируюсь на вопросах самооценки и выгорания.", price: "85", image: "https://i.pravatar.cc/150?img=32", rating: 4.9, categories: ["Все", "Выгорание"]),
+      Specialist(id: "2", name: "Игорь Петров", spec: "КБТ специалист", bio: "Работа с тревожными расстройствами и фобиями.", price: "90", image: "https://i.pravatar.cc/150?img=11", rating: 4.8, categories: ["Все", "Тревога"]),
+      Specialist(id: "3", name: "Марина Сокол", spec: "Семейный психолог", bio: "Помогаю парам наладить коммуникацию.", price: "110", image: "https://i.pravatar.cc/150?img=45", rating: 5.0, categories: ["Все", "Семья"]),
+      Specialist(id: "4", name: "Дмитрий Волков", spec: "Психоаналитик", bio: "Глубинная работа с подсознанием.", price: "95", image: "https://i.pravatar.cc/150?img=12", rating: 4.7, categories: ["Все", "Депрессия"]),
+      Specialist(id: "5", name: "Анна Вишневская", spec: "Арт-терапевт", bio: "Творчество как инструмент познания себя.", price: "75", image: "https://i.pravatar.cc/150?img=26", rating: 4.9, categories: ["Все", "Психосоматика"]),
+      Specialist(id: "6", name: "Виктор Громов", spec: "Экзистенциальный терапевт", bio: "Поиск смысла жизни и кризисы.", price: "100", image: "https://i.pravatar.cc/150?img=13", rating: 4.6, categories: ["Все", "Карьера"]),
+      Specialist(id: "7", name: "Ольга Суворова", spec: "Детский психолог", bio: "Работа с детьми и подростками.", price: "65", image: "https://i.pravatar.cc/150?img=35", rating: 4.8, categories: ["Все", "Семья"]),
+    ];
+  }
+}
+
+// ==========================================
+// 3. Главный экран списка специалистов
+// ==========================================
 class SpecialistListScreen extends StatefulWidget {
   final Function(Map<String, dynamic>)? onBookingConfirmed;
 
@@ -43,41 +101,37 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
   final TextEditingController _maxPriceController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
+  final SpecialistRepository _repository = SpecialistRepository();
+
   String selectedCategory = "Все";
   SortType activeSort = SortType.none;
+  List<Specialist> specialists = [];
   List<Specialist> filteredSpecialists = [];
   List<String> favoriteIds = [];
   SharedPreferences? _prefs;
+  bool isLoading = true;
 
-  // Текущая заявка пользователя
   Map<String, dynamic>? myAssignment;
 
   final List<String> allCategories = ["Все", "❤️ Избранные", "Тревога", "Депрессия", "Семья", "Выгорание", "Психосоматика", "Карьера"];
 
-  final List<Specialist> specialists = [
-    Specialist(id: "1", name: "Елена Маркова", spec: "Гештальт-терапевт", bio: "Специализируюсь на вопросах самооценки и выгорания.", price: "85", image: "https://i.pravatar.cc/150?img=32", rating: 4.9, categories: ["Все", "Выгорание"]),
-    Specialist(id: "2", name: "Игорь Петров", spec: "КБТ специалист", bio: "Работа с тревожными расстройствами и фобиями.", price: "90", image: "https://i.pravatar.cc/150?img=11", rating: 4.8, categories: ["Все", "Тревога"]),
-    Specialist(id: "3", name: "Марина Сокол", spec: "Семейный психолог", bio: "Помогаю парам наладить коммуникацию.", price: "110", image: "https://i.pravatar.cc/150?img=45", rating: 5.0, categories: ["Все", "Семья"]),
-    Specialist(id: "4", name: "Дмитрий Волков", spec: "Психоаналитик", bio: "Глубинная работа с подсознанием.", price: "95", image: "https://i.pravatar.cc/150?img=12", rating: 4.7, categories: ["Все", "Депрессия"]),
-    Specialist(id: "5", name: "Анна Вишневская", spec: "Арт-терапевт", bio: "Творчество как инструмент познания себя.", price: "75", image: "https://i.pravatar.cc/150?img=26", rating: 4.9, categories: ["Все", "Психосоматика"]),
-    Specialist(id: "6", name: "Виктор Громов", spec: "Экзистенциальный терапевт", bio: "Поиск смысла жизни и кризисы.", price: "100", image: "https://i.pravatar.cc/150?img=13", rating: 4.6, categories: ["Все", "Карьера"]),
-    Specialist(id: "7", name: "Ольга Суворова", spec: "Детский психолог", bio: "Работа с детьми и подростками.", price: "65", image: "https://i.pravatar.cc/150?img=35", rating: 4.8, categories: ["Все", "Семья"]),
-  ];
-
   @override
   void initState() {
     super.initState();
-    filteredSpecialists = List.from(specialists);
     _searchController.addListener(_applyFilters);
     _loadData();
   }
 
   Future<void> _loadData() async {
     _prefs = await SharedPreferences.getInstance();
+
+    // Загрузка списка специалистов из репозитория
+    final loadedSpecialists = await _repository.fetchSpecialists();
+
     setState(() {
+      specialists = loadedSpecialists;
       favoriteIds = _prefs?.getStringList('favorite_psychologists') ?? [];
 
-      // Загрузка состояния заявок
       final assignmentStr = _prefs?.getString('client_assignment');
       if (assignmentStr != null) {
         myAssignment = jsonDecode(assignmentStr);
@@ -85,6 +139,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
         myAssignment = null;
       }
 
+      isLoading = false;
       _applyFilters();
     });
   }
@@ -101,7 +156,9 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
       } else {
         await _prefs?.setString('client_assignment', jsonEncode(myAssignment));
       }
-      setState(() {});
+      setState(() {
+        _applyFilters();
+      });
     }
   }
 
@@ -121,12 +178,21 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
   void dispose() {
     _searchFocusNode.dispose();
     _searchController.dispose();
+    _minPriceController.dispose();
+    _maxPriceController.dispose();
     super.dispose();
   }
 
   void _applyFilters() {
     setState(() {
+      String? activeSpecId;
+      if (myAssignment != null && (myAssignment!['status'] == 'requested' || myAssignment!['status'] == 'accepted')) {
+        activeSpecId = myAssignment!['psychologistId'];
+      }
+
       filteredSpecialists = specialists.where((s) {
+        if (s.id == activeSpecId) return false;
+
         final nameMatch = s.name.toLowerCase().contains(_searchController.text.toLowerCase());
         bool categoryMatch = (selectedCategory == "❤️ Избранные")
             ? favoriteIds.contains(s.id)
@@ -155,7 +221,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
       _maxPriceController.clear();
       selectedCategory = "Все";
       activeSort = SortType.none;
-      filteredSpecialists = List.from(specialists);
+      _applyFilters();
     });
   }
 
@@ -185,7 +251,11 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      TextButton.icon(onPressed: () { _resetFilters(); Navigator.pop(context); }, icon: const Icon(Icons.refresh, color: kTextSecondary), label: const Text("Сбросить", style: TextStyle(color: kTextSecondary))),
+                      TextButton.icon(
+                          onPressed: () { _resetFilters(); Navigator.pop(context); },
+                          icon: const Icon(Icons.refresh, color: kTextSecondary),
+                          label: const Text("Сбросить", style: TextStyle(color: kTextSecondary))
+                      ),
                       IconButton(icon: const Icon(Icons.check_circle, color: kAccentPurple, size: 35), onPressed: () => Navigator.pop(context))
                     ],
                   ),
@@ -254,117 +324,299 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
     );
   }
 
+  void _showRatingDialogForSpecialist(Specialist spec) {
+    showDialog(
+        context: context,
+        builder: (context) {
+          int selectedStars = spec.rating.round();
+          return StatefulBuilder(
+              builder: (context, setDialogState) {
+                return AlertDialog(
+                  backgroundColor: kWarmWhite,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  title: Text("Оцените специалиста\n${spec.name}", style: const TextStyle(color: kTextPrimary), textAlign: TextAlign.center),
+                  content: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(5, (index) {
+                      return IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          index < selectedStars ? Icons.star_rounded : Icons.star_outline_rounded,
+                          color: Colors.amber, size: 42,
+                        ),
+                        onPressed: () {
+                          setDialogState(() => selectedStars = index + 1);
+                        },
+                      );
+                    }),
+                  ),
+                  actionsAlignment: MainAxisAlignment.spaceBetween,
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Пропустить", style: TextStyle(color: kTextSecondary))
+                    ),
+                    ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: kAccentPurple, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        onPressed: () {
+                          setState(() {
+                            spec.rating = selectedStars.toDouble();
+                          });
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Спасибо за вашу оценку!")));
+                        },
+                        child: const Text("Оценить", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+                    ),
+                  ],
+                );
+              }
+          );
+        }
+    );
+  }
+
   Future<void> _showCancelOrFinishDialog(bool isCancel) async {
     TextEditingController commentCtrl = TextEditingController();
+
+    final List<String> finishReplies = [
+      "Терапия успешно завершена",
+      "Цели терапии достигнуты",
+      "Решил(а) приостановить работу",
+      "Проблема решена, прогресс стабилен"
+    ];
+
+    final List<String> cancelReplies = [
+      "Передумал(а)",
+      "Выбрал(а) другого специалиста",
+      "Не подходит время/цена"
+    ];
+
+    final currentReplies = isCancel ? cancelReplies : finishReplies;
+
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (ctx) => Container(
-          decoration: const BoxDecoration(color: kDeepPurple, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-          child: Container(
-            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
-            padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(isCancel ? "Отмена заявки" : "Завершение терапии", style: const TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                Text(isCancel ? "Почему вы решили отменить заявку?" : "Оставьте финальный отзыв или комментарий:", style: const TextStyle(color: kTextSecondary)),
-                const SizedBox(height: 15),
-                TextField(
-                  controller: commentCtrl,
-                  maxLines: 3,
-                  style: const TextStyle(color: kTextPrimary),
-                  decoration: InputDecoration(
-                    hintText: "Напишите здесь...",
-                    filled: true, fillColor: kDeepPurple.withOpacity(0.1),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
-                  ),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: SingleChildScrollView(
+            child: Container(
+              decoration: const BoxDecoration(color: kDeepPurple, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+              child: Container(
+                decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(isCancel ? "Отмена заявки" : "Завершение терапии", style: const TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Text(isCancel ? "Укажите причину отмены:" : "Оставьте финальный отзыв или комментарий:", style: const TextStyle(color: kTextSecondary)),
+                    const SizedBox(height: 15),
+
+                    Wrap(
+                      spacing: 8.0,
+                      runSpacing: 10.0,
+                      children: currentReplies.map((reply) => GestureDetector(
+                        onTap: () {
+                          commentCtrl.text = reply;
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                              color: isCancel ? kWeekendRed.withOpacity(0.1) : kAccentPurple.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isCancel ? kWeekendRed.withOpacity(0.3) : kAccentPurple.withOpacity(0.3))
+                          ),
+                          child: Text(
+                              reply,
+                              style: TextStyle(
+                                  color: isCancel ? kWeekendRed : kAccentPurple,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600
+                              )
+                          ),
+                        ),
+                      )).toList(),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    TextField(
+                      controller: commentCtrl,
+                      maxLines: 3,
+                      style: const TextStyle(color: kTextPrimary),
+                      decoration: InputDecoration(
+                        hintText: "Напишите здесь или выберите вариант выше...",
+                        filled: true, fillColor: kDeepPurple.withOpacity(0.1),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: isCancel ? kWeekendRed : kAccentPurple,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                        ),
+                        onPressed: () {
+                          if (isCancel) {
+                            _updateAssignmentStatus('none');
+                            Navigator.pop(ctx);
+                          } else {
+                            String? specId = myAssignment?['psychologistId'];
+                            Specialist? specToRate;
+                            if (specId != null) {
+                              try { specToRate = specialists.firstWhere((s) => s.id == specId); } catch (_) {}
+                            }
+
+                            _updateAssignmentStatus('none');
+                            Navigator.pop(ctx);
+
+                            if (specToRate != null) {
+                              _showRatingDialogForSpecialist(specToRate);
+                            }
+                          }
+                        },
+                        child: Text(isCancel ? "Отменить заявку" : "Завершить работу", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                    )
+                  ],
                 ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: isCancel ? kWeekendRed : kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                    onPressed: () {
-                      if (isCancel) {
-                        _updateAssignmentStatus('none');
-                      } else {
-                        _updateAssignmentStatus('none');
-                        // В реальном API здесь был бы статус canceled или finished отправлен на сервер
-                      }
-                      Navigator.pop(ctx);
-                    },
-                    child: Text(isCancel ? "Отменить заявку" : "Завершить работу", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                )
-              ],
+              ),
             ),
           ),
         )
     );
   }
 
-  Widget _buildAssignmentStatusCard() {
+  Widget _buildPinnedDoctorCard() {
     if (myAssignment == null) return const SizedBox.shrink();
 
     String status = myAssignment!['status'];
-    String name = myAssignment!['psychologistName'];
 
-    Color cardColor = kWarmWhite.withOpacity(0.8);
-    IconData icon = Icons.info_outline;
-    String title = "";
-    String sub = "";
-    Widget? actionBtn;
+    if (status == 'rejected' || status == 'finished') {
+      IconData icon = status == 'rejected' ? Icons.cancel_outlined : Icons.flag_circle_outlined;
+      String title = status == 'rejected' ? "Заявка отклонена" : "Работа завершена";
+      String sub = status == 'rejected' ? "Причина: ${myAssignment!['rejectComment'] ?? 'Нет мест'}" : "Психолог завершил терапию.";
 
-    if (status == 'requested') {
-      icon = Icons.hourglass_empty;
-      title = "Ожидание ответа";
-      sub = "Заявка отправлена специалисту: $name";
-      actionBtn = TextButton(onPressed: () => _showCancelOrFinishDialog(true), child: const Text("Отменить", style: TextStyle(color: kWeekendRed)));
-    } else if (status == 'accepted') {
-      icon = Icons.check_circle_outline;
-      title = "Терапия активна";
-      sub = "Ваш психолог: $name";
-      actionBtn = TextButton(onPressed: () => _showCancelOrFinishDialog(false), child: const Text("Завершить", style: TextStyle(color: kTextSecondary)));
-    } else if (status == 'rejected') {
-      icon = Icons.cancel_outlined;
-      title = "Заявка отклонена";
-      sub = "Причина: ${myAssignment!['rejectComment'] ?? 'Нет мест'}";
-      actionBtn = TextButton(onPressed: () => _updateAssignmentStatus('none'), child: const Text("Скрыть", style: TextStyle(color: kTextPrimary)));
-    } else if (status == 'finished') {
-      icon = Icons.flag_circle_outlined;
-      title = "Работа завершена";
-      sub = "Психолог завершил терапию.";
-      actionBtn = TextButton(onPressed: () => _updateAssignmentStatus('none'), child: const Text("Ок", style: TextStyle(color: kTextPrimary)));
-    } else {
+      return Container(
+        margin: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: kWarmWhite.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: kAccentPurple.withOpacity(0.3), width: 1.5)
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: kAccentPurple, size: 30),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16)),
+                  Text(sub, style: const TextStyle(color: kTextSecondary, fontSize: 13)),
+                ],
+              ),
+            ),
+            TextButton(onPressed: () => _updateAssignmentStatus('none'), child: const Text("Ок", style: TextStyle(color: kTextPrimary)))
+          ],
+        ),
+      );
+    }
+
+    String specId = myAssignment!['psychologistId'];
+    Specialist? doc;
+    try {
+      doc = specialists.firstWhere((s) => s.id == specId);
+    } catch(e) {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      margin: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: kAccentPurple.withOpacity(0.3), width: 1.5)
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: kAccentPurple, size: 30),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    bool isFav = favoriteIds.contains(doc.id);
+    bool isRequested = status == 'requested';
+
+    return GestureDetector(
+      onTap: () {
+        _searchFocusNode.unfocus();
+        Navigator.push(
+            context,
+            MaterialPageRoute(builder: (c) => SpecialistProfileScreen(
+              specialist: doc!,
+              isFavorite: isFav,
+              currentAssignment: myAssignment,
+              onFavoriteToggle: () => _toggleFavorite(doc!.id),
+              onBooking: widget.onBookingConfirmed,
+              onRatingUpdated: () => setState((){}),
+              onRequestAssignment: () => _loadData(),
+            ))
+        ).then((_) => _loadData());
+      },
+      child: Container(
+        margin: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: kWarmWhite,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: kAccentPurple, width: 2.5),
+          boxShadow: [BoxShadow(color: kAccentPurple.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: Column(
+          children: [
+            Row(
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16)),
-                Text(sub, style: const TextStyle(color: kTextSecondary, fontSize: 13)),
+                Icon(isRequested ? Icons.hourglass_empty : Icons.check_circle_outline, color: kAccentPurple, size: 18),
+                const SizedBox(width: 8),
+                Text(isRequested ? "Ожидание ответа специалиста" : "Ваш активный психолог", style: const TextStyle(fontWeight: FontWeight.bold, color: kAccentPurple, fontSize: 13)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => _showCancelOrFinishDialog(isRequested),
+                  child: Text(isRequested ? "Отменить" : "Завершить", style: TextStyle(color: isRequested ? kWeekendRed : kTextSecondary, fontSize: 13, fontWeight: FontWeight.bold)),
+                )
               ],
             ),
-          ),
-          if (actionBtn != null) actionBtn
-        ],
+            const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1, color: Colors.black12)),
+            Row(
+              children: [
+                Hero(tag: '${doc.id}_pinned', child: ClipRRect(borderRadius: BorderRadius.circular(18), child: Image.network(doc.image, width: 80, height: 80, fit: BoxFit.cover))),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(doc.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: kTextPrimary)),
+                      Text(doc.spec, style: const TextStyle(color: kAccentPurple, fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
+                              Text(" ${doc.rating}", style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary)),
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => _toggleFavorite(doc!.id),
+                                child: Icon(isFav ? Icons.favorite : Icons.favorite_border, color: isFav ? Colors.red : kTextSecondary, size: 20),
+                              ),
+                            ],
+                          ),
+                          Text("${doc.price} BYN", style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -423,9 +675,11 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
               ),
             ),
           ],
-          body: Column(
+          body: isLoading
+              ? const Center(child: CircularProgressIndicator(color: kAccentPurple))
+              : Column(
             children: [
-              _buildAssignmentStatusCard(),
+              _buildPinnedDoctorCard(),
               Expanded(
                 child: filteredSpecialists.isEmpty
                     ? const Center(child: Text("Ничего не найдено", style: TextStyle(color: kTextSecondary)))
@@ -452,10 +706,11 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
             MaterialPageRoute(builder: (c) => SpecialistProfileScreen(
               specialist: doc,
               isFavorite: isFav,
+              currentAssignment: myAssignment,
               onFavoriteToggle: () => _toggleFavorite(doc.id),
               onBooking: widget.onBookingConfirmed,
               onRatingUpdated: () => setState((){}),
-              onRequestAssignment: () => _loadData(), // Обновляем при возврате
+              onRequestAssignment: () => _loadData(),
             ))
         ).then((_) => _loadData());
       },
@@ -509,16 +764,20 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
   }
 }
 
+// ==========================================
+// 4. Экран профиля специалиста
+// ==========================================
 class SpecialistProfileScreen extends StatefulWidget {
   final Specialist specialist;
   final bool isFavorite;
+  final Map<String, dynamic>? currentAssignment;
   final VoidCallback onFavoriteToggle;
   final Function(Map<String, dynamic>)? onBooking;
   final VoidCallback? onRatingUpdated;
   final VoidCallback? onRequestAssignment;
 
   const SpecialistProfileScreen({
-    super.key, required this.specialist, required this.isFavorite,
+    super.key, required this.specialist, required this.isFavorite, this.currentAssignment,
     required this.onFavoriteToggle, this.onBooking, this.onRatingUpdated, this.onRequestAssignment
   });
 
@@ -571,10 +830,9 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
                     style: ElevatedButton.styleFrom(backgroundColor: kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                     onPressed: () async {
                       final prefs = await SharedPreferences.getInstance();
-                      // Создаем объект заявки
                       final assignment = {
                         "id": DateTime.now().millisecondsSinceEpoch.toString(),
-                        "clientName": "Тестовый Клиент", // В реальном АПИ берется из токена
+                        "clientName": "Тестовый Клиент",
                         "psychologistId": widget.specialist.id,
                         "psychologistName": widget.specialist.name,
                         "status": "requested",
@@ -584,6 +842,7 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
                       if (widget.onRequestAssignment != null) widget.onRequestAssignment!();
                       Navigator.pop(ctx);
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Заявка успешно отправлена!")));
+                      Navigator.pop(context);
                     },
                     child: const Text("Отправить заявку", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
@@ -595,7 +854,6 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
     );
   }
 
-  // Окна в стиле AuthScreen
   Future<bool?> _showStyledDialog(BuildContext context, String title, String content, String confirmText, Color confirmColor) {
     return showGeneralDialog<bool>(
         context: context,
@@ -705,6 +963,31 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
     );
   }
 
+  void _tryBooking(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final assignmentStr = prefs.getString('client_assignment');
+
+    if (assignmentStr != null) {
+      final assignment = jsonDecode(assignmentStr);
+      if ((assignment['status'] == 'requested' || assignment['status'] == 'accepted') &&
+          assignment['psychologistId'] != widget.specialist.id) {
+
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("У вас уже есть активная работа со специалистом ${assignment['psychologistName']}. Сначала завершите её."),
+              backgroundColor: kWeekendRed,
+              duration: const Duration(seconds: 4),
+            )
+        );
+        return;
+      }
+    }
+
+    if (!context.mounted) return;
+    _showBookingOverlay(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -748,19 +1031,54 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
                       ),
                       const SizedBox(height: 20),
 
-                      // Кнопка подачи заявки на терапию (State Machine Flow)
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.assignment_ind_outlined, color: kWarmWhite),
-                          label: const Text("Подать заявку на терапию", style: TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold)),
-                          style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: kWarmWhite, width: 1.5),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
-                          ),
-                          onPressed: _showRequestAssignmentDialog,
-                        ),
+                      Builder(
+                          builder: (context) {
+                            bool hasActiveAssignment = widget.currentAssignment != null &&
+                                (widget.currentAssignment!['status'] == 'requested' || widget.currentAssignment!['status'] == 'accepted');
+                            bool isAssignedToThis = hasActiveAssignment && widget.currentAssignment!['psychologistId'] == widget.specialist.id;
+
+                            if (hasActiveAssignment) {
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: kWarmWhite.withOpacity(0.95),
+                                  borderRadius: BorderRadius.circular(15),
+                                  border: Border.all(color: isAssignedToThis ? kAccentPurple : kWeekendRed.withOpacity(0.6), width: 2),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(isAssignedToThis ? Icons.check_circle : Icons.info_outline, color: isAssignedToThis ? kAccentPurple : kWeekendRed),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        isAssignedToThis
+                                            ? "Вы уже отправили заявку или работаете с этим специалистом."
+                                            : "Вы уже выбрали специалиста. Для выбора нового завершите текущую терапию.",
+                                        style: const TextStyle(color: kTextPrimary, fontSize: 14, fontWeight: FontWeight.w600, height: 1.3),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.assignment_ind, color: kAccentPurple),
+                                label: const Text("ПОДАТЬ ЗАЯВКУ", style: TextStyle(color: kAccentPurple, fontWeight: FontWeight.bold, fontSize: 16)),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: kWarmWhite,
+                                    foregroundColor: kAccentPurple,
+                                    elevation: 6,
+                                    shadowColor: Colors.black45,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                                ),
+                                onPressed: _showRequestAssignmentDialog,
+                              ),
+                            );
+                          }
                       ),
 
                       const SizedBox(height: 25),
@@ -800,7 +1118,7 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
             child: SizedBox(
               height: 60,
               child: ElevatedButton(
-                onPressed: () => _showBookingOverlay(context),
+                onPressed: () => _tryBooking(context),
                 style: ElevatedButton.styleFrom(backgroundColor: kAccentPurple, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
                 child: Text("ЗАПИСАТЬСЯ • ${widget.specialist.price} BYN", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
@@ -823,6 +1141,9 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
   }
 }
 
+// ==========================================
+// 5. Оверлей бронирования (Календарь)
+// ==========================================
 class _BookingOverlay extends StatefulWidget {
   final Specialist spec;
   final Function(Map<String, dynamic>)? onConfirmed;
@@ -1204,7 +1525,6 @@ class _BookingOverlayState extends State<_BookingOverlay> {
                                     Duration diff = appointmentTime.difference(DateTime.now());
                                     bool isPenalty = diff.inHours < 24;
 
-                                    // Окно 1: Подтверждение отмены
                                     final confirmCancel = await widget.showStyledDialog(
                                         context,
                                         "Отмена записи",
@@ -1215,7 +1535,6 @@ class _BookingOverlayState extends State<_BookingOverlay> {
 
                                     if (confirmCancel != true) return;
 
-                                    // Окно 2: Предупреждение о неустойке (если меньше 24 часов)
                                     if (isPenalty) {
                                       if (!context.mounted) return;
                                       final confirmForfeit = await widget.showStyledDialog(

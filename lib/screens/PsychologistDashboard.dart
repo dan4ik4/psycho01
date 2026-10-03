@@ -25,6 +25,8 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
   int _calendarSlideDirection = 0;
   final DateTime now = DateTime.now();
 
+  int _selectedTab = 0; // 0 - Расписание, 1 - Клиенты
+
   Map<String, List<String>> _availableSlots = {};
   Map<String, List<Map<String, dynamic>>> _bookedVisits = {};
 
@@ -74,14 +76,12 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
 
       _bookedVisits = {};
 
-      // Загрузка заявок от клиентов (State Machine)
       final assignmentStr = prefs.getString('client_assignment');
       _incomingRequests.clear();
       _activeClients.clear();
 
       if (assignmentStr != null) {
         final Map<String, dynamic> assignment = jsonDecode(assignmentStr);
-        // В реальном приложении здесь фильтрация по psychologistId
         if (assignment['status'] == 'requested') {
           _incomingRequests.add(assignment);
         } else if (assignment['status'] == 'accepted') {
@@ -340,6 +340,121 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
 
   void _showRejectOrFinishDialog(Map<String, dynamic> req, bool isReject) {
     TextEditingController commentCtrl = TextEditingController();
+
+    // Быстрые ответы
+    final List<String> finishReplies = [
+      "Терапия успешно завершена",
+      "Цели терапии достигнуты",
+      "Клиент решил приостановить работу",
+      "Проблема решена, прогресс стабилен",
+      "Перенаправлен к другому специалисту"
+    ];
+
+    final List<String> rejectReplies = [
+      "К сожалению, нет свободных мест",
+      "Не работаю с данным запросом",
+      "Запрос вне моей компетенции"
+    ];
+
+    final List<String> currentReplies = isReject ? rejectReplies : finishReplies;
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Padding(
+          // Динамический отступ для клавиатуры
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: SingleChildScrollView( // Делаем окно прокручиваемым на случай маленьких экранов
+            child: Container(
+              decoration: const BoxDecoration(
+                  color: kDeepPurple,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(30))
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                    color: kWarmWhite.withOpacity(0.9),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(30))
+                ),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, // Окно занимает только нужное место
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(isReject ? "Отклонение заявки" : "Завершение работы", style: const TextStyle(color: kTextPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Text(isReject ? "Укажите причину отказа" : "Оставьте обязательный комментарий о завершении терапии", style: const TextStyle(color: kTextSecondary, fontSize: 14)),
+                    const SizedBox(height: 15),
+
+                    // Блок с быстрыми ответами (используем Wrap для переноса строк)
+                    Wrap(
+                      spacing: 8.0, // Горизонтальный отступ между плашками
+                      runSpacing: 10.0, // Вертикальный отступ между строками
+                      children: currentReplies.map((reply) => GestureDetector(
+                        onTap: () {
+                          commentCtrl.text = reply;
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                              color: isReject ? kWeekendRed.withOpacity(0.1) : kAccentPurple.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isReject ? kWeekendRed.withOpacity(0.3) : kAccentPurple.withOpacity(0.3))
+                          ),
+                          child: Text(
+                              reply,
+                              style: TextStyle(
+                                  color: isReject ? kWeekendRed : kAccentPurple,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600
+                              )
+                          ),
+                        ),
+                      )).toList(),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    TextField(
+                      controller: commentCtrl,
+                      maxLines: 3,
+                      style: const TextStyle(color: kTextPrimary),
+                      decoration: InputDecoration(
+                        hintText: "Напишите здесь или выберите вариант выше...",
+                        filled: true, fillColor: kDeepPurple.withOpacity(0.1),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: isReject ? kWeekendRed : kAccentPurple,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                        ),
+                        onPressed: () {
+                          if (!isReject && commentCtrl.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Пожалуйста, оставьте комментарий для завершения")));
+                            return;
+                          }
+                          _updateAssignmentStatus(req, isReject ? 'rejected' : 'finished', commentField: isReject ? 'rejectComment' : 'finishComment', commentValue: commentCtrl.text.trim());
+                          Navigator.pop(ctx);
+                        },
+                        child: Text(isReject ? "Отклонить заявку" : "Завершить работу", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        )
+    );
+  }
+  void _showTreatmentPlanDialog(Map<String, dynamic> client) {
+    TextEditingController planCtrl = TextEditingController(text: client['treatmentPlan'] ?? '');
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -353,16 +468,16 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(isReject ? "Отклонение заявки" : "Завершение работы", style: const TextStyle(color: kTextPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+                const Text("План лечения", style: TextStyle(color: kTextPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
-                Text(isReject ? "Укажите причину отказа (например, 'Нет свободных мест')" : "Оставьте комментарий о завершении терапии", style: const TextStyle(color: kTextSecondary, fontSize: 14)),
+                const Text("Этот план будет доступен пациенту и отправлен нейросети для анализа.", style: TextStyle(color: kTextSecondary, fontSize: 14)),
                 const SizedBox(height: 15),
                 TextField(
-                  controller: commentCtrl,
-                  maxLines: 3,
+                  controller: planCtrl,
+                  maxLines: 5,
                   style: const TextStyle(color: kTextPrimary),
                   decoration: InputDecoration(
-                    hintText: "Напишите здесь...",
+                    hintText: "Опишите план терапии, рекомендации...",
                     filled: true, fillColor: kDeepPurple.withOpacity(0.1),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
                   ),
@@ -371,12 +486,13 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: isReject ? kWeekendRed : kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                    style: ElevatedButton.styleFrom(backgroundColor: kAccentPurple, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                     onPressed: () {
-                      _updateAssignmentStatus(req, isReject ? 'rejected' : 'finished', commentField: isReject ? 'rejectComment' : 'finishComment', commentValue: commentCtrl.text.trim());
+                      _updateAssignmentStatus(client, client['status'], commentField: 'treatmentPlan', commentValue: planCtrl.text.trim());
                       Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("План лечения сохранен и отправлен нейросети", style: TextStyle(color: kWarmWhite)), backgroundColor: kAccentPurple));
                     },
-                    child: Text(isReject ? "Отклонить заявку" : "Завершить работу", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    child: const Text("Сохранить и Отправить", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 )
               ],
@@ -614,6 +730,61 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     );
   }
 
+  Widget _buildTabSwitcher() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: kWarmWhite.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedTab = 0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _selectedTab == 0 ? kAccentPurple : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Text("Расписание", style: TextStyle(color: kWarmWhite, fontWeight: _selectedTab == 0 ? FontWeight.bold : FontWeight.normal)),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedTab = 1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _selectedTab == 1 ? kAccentPurple : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text("Клиенты", style: TextStyle(color: kWarmWhite, fontWeight: _selectedTab == 1 ? FontWeight.bold : FontWeight.normal)),
+                    if (_incomingRequests.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: kWeekendRed, shape: BoxShape.circle),
+                        child: Text('${_incomingRequests.length}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                      )
+                    ]
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final gridDates = _buildGridDates(visibleMonth);
@@ -636,360 +807,404 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text("Мой кабинет", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: kWarmWhite)),
+                    const SizedBox(height: 20),
 
-                    // Блок входящих заявок (State Machine)
-                    if (_incomingRequests.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      const Text("Новые заявки", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 10),
-                      Column(
-                        children: _incomingRequests.map((req) => Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: BorderRadius.circular(20)),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    _buildTabSwitcher(),
+
+                    const SizedBox(height: 25),
+
+                    // ---- ВКЛАДКА 1: РАСПИСАНИЕ И НАСТРОЙКИ ----
+                    if (_selectedTab == 0) ...[
+                      GestureDetector(
+                        onTap: _showPriceEditor,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
+                          decoration: BoxDecoration(
+                              color: kWarmWhite.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))]
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Row(
+                              const Row(
                                 children: [
-                                  CircleAvatar(backgroundColor: kAccentPurple.withOpacity(0.2), child: const Icon(Icons.person, color: kAccentPurple)),
-                                  const SizedBox(width: 12),
-                                  Expanded(child: Text(req['clientName'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16))),
+                                  Icon(Icons.payments_outlined, color: kAccentPurple, size: 28),
+                                  SizedBox(width: 12),
+                                  Text("Стоимость сеанса", style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
                                 ],
                               ),
-                              const SizedBox(height: 10),
-                              Text("«${req['requestComment']}»", style: const TextStyle(color: kTextSecondary, fontStyle: FontStyle.italic)),
-                              const SizedBox(height: 15),
                               Row(
                                 children: [
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      onPressed: () => _showRejectOrFinishDialog(req, true),
-                                      style: OutlinedButton.styleFrom(side: const BorderSide(color: kWeekendRed), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                                      child: const Text("Отклонить", style: TextStyle(color: kWeekendRed)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: () => _updateAssignmentStatus(req, 'accepted'),
-                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
-                                      child: const Text("Принять", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                    ),
-                                  )
+                                  Text("${sessionPrice.toInt()} BYN", style: const TextStyle(fontWeight: FontWeight.bold, color: kAccentPurple, fontSize: 18)),
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.edit, color: kTextSecondary, size: 20),
                                 ],
                               )
                             ],
                           ),
-                        )).toList(),
+                        ),
                       ),
-                    ],
-
-                    // Блок активных клиентов
-                    if (_activeClients.isNotEmpty) ...[
                       const SizedBox(height: 20),
-                      const Text("Активные клиенты", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 10),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _activeClients.map((client) => Container(
-                            width: 200,
-                            margin: const EdgeInsets.only(right: 12),
+
+                      GestureDetector(
+                        onTap: _showWeeklyTemplateEditor,
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                              color: kAccentPurple,
+                              borderRadius: BorderRadius.circular(20)
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.2), shape: BoxShape.circle),
+                                child: const Icon(Icons.copy_all, color: kWarmWhite),
+                              ),
+                              const SizedBox(width: 15),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Шаблон расписания", style: TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text("Настройте неделю по умолчанию", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.arrow_forward_ios, color: kWarmWhite, size: 16)
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+
+                      Container(
+                        decoration: BoxDecoration(
+                          color: kWarmWhite,
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                IconButton(icon: const Icon(Icons.chevron_left, color: kTextPrimary), onPressed: () { _changeMonth(delta: -1); }),
+                                Expanded(
+                                  child: Center(
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 1100),
+                                      transitionBuilder: (Widget child, Animation<double> anim) {
+                                        final offset = Tween<Offset>(begin: Offset(0.22 * _calendarSlideDirection, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                                        return ClipRect(child: SlideTransition(position: offset, child: FadeTransition(opacity: anim, child: child)));
+                                      },
+                                      child: Text('${_monthNames[visibleMonth.month - 1]} ${visibleMonth.year}', key: ValueKey('${visibleMonth.month}_${visibleMonth.year}'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: kTextPrimary)),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(icon: const Icon(Icons.chevron_right, color: kTextPrimary), onPressed: () { _changeMonth(delta: 1); }),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: _weekDays.map((d) {
+                                final isWeekend = d == 'Сб' || d == 'Вс';
+                                return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? kWeekendRed : kTextSecondary, fontWeight: FontWeight.w600))));
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onHorizontalDragEnd: (details) {
+                                if (details.primaryVelocity == null) return;
+                                if (details.primaryVelocity! < -200) { _changeMonth(delta: 1); }
+                                else if (details.primaryVelocity! > 200) { _changeMonth(delta: -1); }
+                              },
+                              child: SizedBox(
+                                height: calendarHeight,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 1100),
+                                  transitionBuilder: (Widget child, Animation<double> anim) {
+                                    final offset = Tween<Offset>(begin: Offset(0.18 * _calendarSlideDirection, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                                    return ClipRect(child: SlideTransition(position: offset, child: FadeTransition(opacity: anim, child: child)));
+                                  },
+                                  child: _buildCalendarGrid(key: ValueKey<String>('grid_${visibleMonth.year}_${visibleMonth.month}_${gridDates.length}'), gridDates: gridDates, calendarHeight: calendarHeight),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+
+                      if (_selectedDate != null) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text("Редактирование: ${_selectedDate!.day.toString().padLeft(2,'0')}.${_selectedDate!.month.toString().padLeft(2,'0')}", style: const TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
+                            if (currentBookings.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(10)),
+                                child: Text("Записей: ${currentBookings.length}", style: const TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 12)),
+                              )
+                          ],
+                        ),
+                        const SizedBox(height: 15),
+
+                        if (currentBookings.isNotEmpty) ...[
+                          Column(
+                            children: currentBookings.map((b) => Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: BorderRadius.circular(20), border: Border.all(color: kAccentPurple, width: 2)),
+                              child: Row(
+                                children: [
+                                  ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(b['image'], width: 45, height: 45, fit: BoxFit.cover)),
+                                  const SizedBox(width: 15),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(b['client'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary)),
+                                        Text(b['topic'], style: const TextStyle(color: kTextSecondary, fontSize: 12)),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(color: kAccentPurple, borderRadius: BorderRadius.circular(12)),
+                                    child: Text(b['time'], style: const TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  )
+                                ],
+                              ),
+                            )).toList(),
+                          ),
+                          const SizedBox(height: 15),
+                        ],
+
+                        const Text("Свободное время", style: TextStyle(color: kWarmWhite, fontSize: 16)),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                          child: GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 2.8,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                            ),
+                            itemCount: currentSlots.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == currentSlots.length) {
+                                return InkWell(
+                                  onTap: () {
+                                    _pickTime(context, (time) {
+                                      final interval = _calculateInterval(time, sessionDurationMinutes);
+                                      setState(() {
+                                        _availableSlots.putIfAbsent(selectedDateStr!, () => []);
+                                        if (!(_availableSlots[selectedDateStr!]!.contains(interval))) {
+                                          _availableSlots[selectedDateStr!]!.add(interval);
+                                          _availableSlots[selectedDateStr!]!.sort((a, b) => a.compareTo(b));
+                                        }
+                                      });
+                                      _saveSchedule();
+                                    });
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: kAccentPurple,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add, color: kWarmWhite, size: 18),
+                                        SizedBox(width: 4),
+                                        Text("Добавить", style: TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 13)),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final t = currentSlots[index];
+                              final bool isBooked = currentBookings.any((b) => b['time'] == t);
+
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: isBooked ? Colors.redAccent.withOpacity(0.6) : kWarmWhite,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        t,
+                                        style: TextStyle(
+                                          color: isBooked ? kWarmWhite : kTextPrimary,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                    if (!isBooked)
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        icon: const Icon(Icons.close, color: kTextSecondary, size: 16),
+                                        onPressed: () {
+                                          setState(() {
+                                            _availableSlots[selectedDateStr!]?.remove(t);
+                                          });
+                                          _saveSchedule();
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ]
+
+                    // ---- ВКЛАДКА 2: КЛИЕНТЫ И ЗАЯВКИ ----
+                    else ...[
+                      if (_incomingRequests.isNotEmpty) ...[
+                        const Text("Новые заявки", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 10),
+                        Column(
+                          children: _incomingRequests.map((req) => Container(
+                            margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.8), borderRadius: BorderRadius.circular(20), border: Border.all(color: kAccentPurple.withOpacity(0.3))),
+                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: BorderRadius.circular(20)),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                                    const SizedBox(width: 6),
-                                    Expanded(child: Text(client['clientName'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary), overflow: TextOverflow.ellipsis)),
+                                    CircleAvatar(backgroundColor: kAccentPurple.withOpacity(0.2), child: const Icon(Icons.person, color: kAccentPurple)),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: Text(req['clientName'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16))),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: TextButton(
-                                    style: TextButton.styleFrom(backgroundColor: kAccentPurple.withOpacity(0.1), padding: const EdgeInsets.symmetric(vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                                    onPressed: () => _showRejectOrFinishDialog(client, false),
-                                    child: const Text("Завершить", style: TextStyle(color: kAccentPurple, fontSize: 13, fontWeight: FontWeight.bold)),
-                                  ),
+                                const SizedBox(height: 10),
+                                Text("«${req['requestComment']}»", style: const TextStyle(color: kTextSecondary, fontStyle: FontStyle.italic)),
+                                const SizedBox(height: 15),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: () => _showRejectOrFinishDialog(req, true),
+                                        style: OutlinedButton.styleFrom(side: const BorderSide(color: kWeekendRed), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                                        child: const Text("Отклонить", style: TextStyle(color: kWeekendRed)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () => _updateAssignmentStatus(req, 'accepted'),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
+                                        child: const Text("Принять", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                      ),
+                                    )
+                                  ],
                                 )
                               ],
                             ),
                           )).toList(),
                         ),
-                      )
-                    ],
-
-                    const SizedBox(height: 25),
-
-                    // Кнопка настройки стоимости
-                    GestureDetector(
-                      onTap: _showPriceEditor,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
-                        decoration: BoxDecoration(
-                            color: kWarmWhite.withOpacity(0.9),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))]
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(Icons.payments_outlined, color: kAccentPurple, size: 28),
-                                SizedBox(width: 12),
-                                Text("Стоимость сеанса", style: TextStyle(color: kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                Text("${sessionPrice.toInt()} BYN", style: const TextStyle(fontWeight: FontWeight.bold, color: kAccentPurple, fontSize: 18)),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.edit, color: kTextSecondary, size: 20),
-                              ],
-                            )
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Кнопка Трафарета стандартной недели
-                    GestureDetector(
-                      onTap: _showWeeklyTemplateEditor,
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                            color: kAccentPurple,
-                            borderRadius: BorderRadius.circular(20)
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.2), shape: BoxShape.circle),
-                              child: const Icon(Icons.copy_all, color: kWarmWhite),
-                            ),
-                            const SizedBox(width: 15),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("Шаблон расписания", style: TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 16)),
-                                  Text("Настройте неделю по умолчанию", style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.arrow_forward_ios, color: kWarmWhite, size: 16)
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 25),
-
-                    // Календарь
-                    Container(
-                      decoration: BoxDecoration(
-                        color: kWarmWhite,
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(icon: const Icon(Icons.chevron_left, color: kTextPrimary), onPressed: () { _changeMonth(delta: -1); }),
-                              Expanded(
-                                child: Center(
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 1100),
-                                    transitionBuilder: (Widget child, Animation<double> anim) {
-                                      final offset = Tween<Offset>(begin: Offset(0.22 * _calendarSlideDirection, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
-                                      return ClipRect(child: SlideTransition(position: offset, child: FadeTransition(opacity: anim, child: child)));
-                                    },
-                                    child: Text('${_monthNames[visibleMonth.month - 1]} ${visibleMonth.year}', key: ValueKey('${visibleMonth.month}_${visibleMonth.year}'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: kTextPrimary)),
-                                  ),
-                                ),
-                              ),
-                              IconButton(icon: const Icon(Icons.chevron_right, color: kTextPrimary), onPressed: () { _changeMonth(delta: 1); }),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: _weekDays.map((d) {
-                              final isWeekend = d == 'Сб' || d == 'Вс';
-                              return Expanded(child: Center(child: Text(d, style: TextStyle(color: isWeekend ? kWeekendRed : kTextSecondary, fontWeight: FontWeight.w600))));
-                            }).toList(),
-                          ),
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onHorizontalDragEnd: (details) {
-                              if (details.primaryVelocity == null) return;
-                              if (details.primaryVelocity! < -200) { _changeMonth(delta: 1); }
-                              else if (details.primaryVelocity! > 200) { _changeMonth(delta: -1); }
-                            },
-                            child: SizedBox(
-                              height: calendarHeight,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 1100),
-                                transitionBuilder: (Widget child, Animation<double> anim) {
-                                  final offset = Tween<Offset>(begin: Offset(0.18 * _calendarSlideDirection, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
-                                  return ClipRect(child: SlideTransition(position: offset, child: FadeTransition(opacity: anim, child: child)));
-                                },
-                                child: _buildCalendarGrid(key: ValueKey<String>('grid_${visibleMonth.year}_${visibleMonth.month}_${gridDates.length}'), gridDates: gridDates, calendarHeight: calendarHeight),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 25),
-
-                    // Информация о выбранном дне
-                    if (_selectedDate != null) ...[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text("Редактирование: ${_selectedDate!.day.toString().padLeft(2,'0')}.${_selectedDate!.month.toString().padLeft(2,'0')}", style: const TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
-                          if (currentBookings.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(10)),
-                              child: Text("Записей: ${currentBookings.length}", style: const TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 12)),
-                            )
-                        ],
-                      ),
-                      const SizedBox(height: 15),
-
-                      if (currentBookings.isNotEmpty) ...[
-                        Column(
-                          children: currentBookings.map((b) => Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.9), borderRadius: BorderRadius.circular(20), border: Border.all(color: kAccentPurple, width: 2)),
-                            child: Row(
-                              children: [
-                                ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(b['image'], width: 45, height: 45, fit: BoxFit.cover)),
-                                const SizedBox(width: 15),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(b['client'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary)),
-                                      Text(b['topic'], style: const TextStyle(color: kTextSecondary, fontSize: 12)),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(color: kAccentPurple, borderRadius: BorderRadius.circular(12)),
-                                  child: Text(b['time'], style: const TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 12)),
-                                )
-                              ],
-                            ),
-                          )).toList(),
-                        ),
-                        const SizedBox(height: 15),
+                        const SizedBox(height: 20),
                       ],
 
-                      const Text("Свободное время", style: TextStyle(color: kWarmWhite, fontSize: 16)),
-                      const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 2.8,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
+                      const Text("Мои клиенты", style: TextStyle(color: kWarmWhite, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 15),
+
+                      if (_activeClients.isEmpty)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 40.0),
+                            child: Text("У вас пока нет активных клиентов.", style: TextStyle(color: kWarmWhite.withOpacity(0.7), fontSize: 16)),
                           ),
-                          itemCount: currentSlots.length + 1,
-                          itemBuilder: (context, index) {
-                            if (index == currentSlots.length) {
-                              return InkWell(
-                                onTap: () {
-                                  _pickTime(context, (time) {
-                                    final interval = _calculateInterval(time, sessionDurationMinutes);
-                                    setState(() {
-                                      _availableSlots.putIfAbsent(selectedDateStr!, () => []);
-                                      if (!(_availableSlots[selectedDateStr!]!.contains(interval))) {
-                                        _availableSlots[selectedDateStr!]!.add(interval);
-                                        _availableSlots[selectedDateStr!]!.sort((a, b) => a.compareTo(b));
-                                      }
-                                    });
-                                    _saveSchedule();
-                                  });
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: kAccentPurple,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.add, color: kWarmWhite, size: 18),
-                                      SizedBox(width: 4),
-                                      Text("Добавить", style: TextStyle(color: kWarmWhite, fontWeight: FontWeight.bold, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }
-
-                            final t = currentSlots[index];
-                            final bool isBooked = currentBookings.any((b) => b['time'] == t);
-
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: isBooked ? Colors.redAccent.withOpacity(0.6) : kWarmWhite,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      t,
-                                      style: TextStyle(
-                                        color: isBooked ? kWarmWhite : kTextPrimary,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
+                        )
+                      else
+                        Column(
+                          children: _activeClients.map((client) => Container(
+                            margin: const EdgeInsets.only(bottom: 15),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: kWarmWhite.withOpacity(0.95), borderRadius: BorderRadius.circular(20)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(backgroundColor: kAccentPurple.withOpacity(0.2), child: const Icon(Icons.person, color: kAccentPurple)),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(client['clientName'], style: const TextStyle(fontWeight: FontWeight.bold, color: kTextPrimary, fontSize: 16)),
+                                          const SizedBox(height: 2),
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.check_circle, color: Colors.green, size: 14),
+                                              const SizedBox(width: 4),
+                                              Text("В терапии", style: TextStyle(color: kTextSecondary.withOpacity(0.8), fontSize: 12)),
+                                            ],
+                                          )
+                                        ],
                                       ),
-                                      textAlign: TextAlign.center,
                                     ),
-                                  ),
-                                  if (!isBooked)
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: const Icon(Icons.close, color: kTextSecondary, size: 16),
-                                      onPressed: () {
-                                        setState(() {
-                                          _availableSlots[selectedDateStr!]?.remove(t);
-                                        });
-                                        _saveSchedule();
-                                      },
+                                  ],
+                                ),
+                                const SizedBox(height: 15),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: kAccentPurple,
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            elevation: 0
+                                        ),
+                                        icon: const Icon(Icons.edit_document, size: 16, color: kWarmWhite),
+                                        label: const Text("План лечения", style: TextStyle(color: kWarmWhite, fontSize: 13, fontWeight: FontWeight.bold)),
+                                        onPressed: () => _showTreatmentPlanDialog(client),
+                                      ),
                                     ),
-                                ],
-                              ),
-                            );
-                          },
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      flex: 2,
+                                      child: TextButton(
+                                        style: TextButton.styleFrom(
+                                            backgroundColor: kWeekendRed.withOpacity(0.1),
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                                        ),
+                                        onPressed: () => _showRejectOrFinishDialog(client, false),
+                                        child: const Text("Завершить", style: TextStyle(color: kWeekendRed, fontSize: 13, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              ],
+                            ),
+                          )).toList(),
                         ),
-                      ),
                     ],
+
                     const SizedBox(height: 50),
                   ],
                 ),

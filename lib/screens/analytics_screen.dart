@@ -1,11 +1,18 @@
+// lib/screens/analytics_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AnalyticsScreen extends StatefulWidget {
-  final Map<String, Map<String, dynamic>> notesData;
-  const AnalyticsScreen({required this.notesData, super.key});
+  final Map<String, Map<String, dynamic>>? notesData;
+
+  const AnalyticsScreen({
+    super.key,
+    this.notesData,
+  });
 
   @override
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -18,18 +25,65 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
 
   final Color deepPurple = const Color(0xFFB0A6E8);
   final Color accentPurple = const Color(0xFF7862D6);
-  final Color warmWhite = const Color(0xFFF6F8FD); // Ghost / Soft Lavender White
+  final Color warmWhite = const Color(0xFFF6F8FD);
   final Color textPrimary = const Color(0xFF323045);
   final Color textSecondary = const Color(0xFF706D8C);
 
   late AnimationController _emojiController;
   late Animation<double> _gentleAnimation;
 
+  late final Dio _dio;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  Map<String, int> _stats = {
+    'excellent': 0,
+    'good': 0,
+    'neutral': 0,
+    'bad': 0,
+    'terrible': 0,
+  };
+
+  final Map<String, dynamic> moodData = {
+    'terrible': {'path': 'assets/lottie/terrible.json', 'color': Colors.redAccent},
+    'bad': {'path': 'assets/lottie/bad.json', 'color': Colors.orange},
+    'neutral': {'path': 'assets/lottie/neutral.json', 'color': Colors.amber},
+    'good': {'path': 'assets/lottie/good.json', 'color': Colors.lightGreen},
+    'excellent': {'path': 'assets/lottie/excellent.json', 'color': Colors.green},
+  };
+
   @override
   void initState() {
     super.initState();
+    _initDio();
+    _initAnimation();
     _applyQuickPeriod('week');
+  }
 
+  void _initDio() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: 'https://api.oakle.app/api/v1',
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+    );
+
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString('auth_token');
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          return handler.next(options);
+        },
+      ),
+    );
+  }
+
+  void _initAnimation() {
     _emojiController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2500),
@@ -59,14 +113,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     super.dispose();
   }
 
-  final Map<String, dynamic> moodData = {
-    'terrible': {'path': 'assets/lottie/terrible.json', 'color': Colors.redAccent},
-    'bad': {'path': 'assets/lottie/bad.json', 'color': Colors.orange},
-    'neutral': {'path': 'assets/lottie/neutral.json', 'color': Colors.amber},
-    'good': {'path': 'assets/lottie/good.json', 'color': Colors.lightGreen},
-    'excellent': {'path': 'assets/lottie/excellent.json', 'color': Colors.green},
-  };
-
   void _applyQuickPeriod(String type) {
     DateTime now = DateTime.now();
     DateTime start;
@@ -83,6 +129,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       _startController.text = DateFormat('dd.MM.yy').format(start);
       _endController.text = DateFormat('dd.MM.yy').format(now);
     });
+
+    _fetchAnalyticsData();
   }
 
   DateTime? _safeParse(String input) {
@@ -94,31 +142,87 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     }
   }
 
-  Map<String, int> _calculateStats() {
-    Map<String, int> stats = {'excellent': 0, 'good': 0, 'neutral': 0, 'bad': 0, 'terrible': 0};
+  void _calculateStatsFromLocalData(DateTime start, DateTime end) {
+    Map<String, int> localStats = {
+      'excellent': 0,
+      'good': 0,
+      'neutral': 0,
+      'bad': 0,
+      'terrible': 0,
+    };
+
+    if (widget.notesData != null) {
+      final normStart = DateTime(start.year, start.month, start.day);
+      final normEnd = DateTime(end.year, end.month, end.day, 23, 59, 59);
+
+      widget.notesData!.forEach((dateKey, value) {
+        try {
+          final dt = DateTime.parse(dateKey);
+          if ((dt.isAfter(normStart) || dt.isAtSameMomentAs(normStart)) &&
+              (dt.isBefore(normEnd) || dt.isAtSameMomentAs(normEnd))) {
+            final mood = value['dayMood'] as String?;
+            if (mood != null && localStats.containsKey(mood)) {
+              localStats[mood] = (localStats[mood] ?? 0) + 1;
+            }
+          }
+        } catch (_) {}
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _stats = localStats;
+      });
+    }
+  }
+
+  Future<void> _fetchAnalyticsData() async {
     final start = _safeParse(_startController.text);
     final end = _safeParse(_endController.text);
 
-    if (start == null || end == null) return stats;
+    if (start == null || end == null) return;
 
-    final endLimit = DateTime(end.year, end.month, end.day, 23, 59, 59);
-    widget.notesData.forEach((key, val) {
-      try {
-        DateTime d = DateTime.parse(key);
-        if (!d.isBefore(start) && !d.isAfter(endLimit)) {
-          String? mood = val['dayMood'] ?? (val['items']?.isNotEmpty == true ? val['items'][0]['mood'] : null);
-          if (mood != null && stats.containsKey(mood)) stats[mood] = stats[mood]! + 1;
-        }
-      } catch (_) {}
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
     });
-    return stats;
+
+    try {
+      final response = await _dio.get(
+        '/analytics/mood',
+        queryParameters: {
+          'start_date': DateFormat('yyyy-MM-dd').format(start),
+          'end_date': DateFormat('yyyy-MM-dd').format(end),
+        },
+      );
+
+      if (mounted && response.statusCode == 200 && response.data != null) {
+        final Map<String, dynamic> rawStats = response.data['stats'] ?? response.data;
+        setState(() {
+          _stats = {
+            'terrible': rawStats['terrible'] ?? 0,
+            'bad': rawStats['bad'] ?? 0,
+            'neutral': rawStats['neutral'] ?? 0,
+            'good': rawStats['good'] ?? 0,
+            'excellent': rawStats['excellent'] ?? 0,
+          };
+        });
+      } else {
+        _calculateStatsFromLocalData(start, end);
+      }
+    } catch (_) {
+      _calculateStatsFromLocalData(start, end);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final stats = _calculateStats();
-    final total = stats.values.fold(0, (a, b) => a + b);
-    final maxCount = stats.values.reduce((a, b) => a > b ? a : b);
+    final total = _stats.values.fold(0, (a, b) => a + b);
+    final maxCount = _stats.values.reduce((a, b) => a > b ? a : b);
     final h = MediaQuery.of(context).size.height;
 
     return Scaffold(
@@ -152,46 +256,71 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                     : const SizedBox(height: 10),
               ),
 
-              if (total == 0)
+              if (_isLoading)
                 SizedBox(
                   height: h * 0.5,
                   child: Center(
-                    child: Text(
-                      _safeParse(_startController.text) == null
-                          ? "Введите дату полностью"
-                          : "Данных не найдено",
-                      style: TextStyle(color: warmWhite.withOpacity(0.8)),
+                    child: CircularProgressIndicator(color: warmWhite),
+                  ),
+                )
+              else if (_errorMessage != null)
+                SizedBox(
+                  height: h * 0.5,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 30),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: warmWhite.withOpacity(0.9)),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
                 )
-              else
-                Column(
-                  children: [
-                    const SizedBox(height: 10),
-                    Container(
-                      height: h * 0.52,
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                      padding: const EdgeInsets.fromLTRB(10, 30, 10, 15),
-                      decoration: BoxDecoration(
-                        color: warmWhite.withOpacity(0.8),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _bar('terrible', stats['terrible']!, maxCount, total),
-                          _bar('bad', stats['bad']!, maxCount, total),
-                          _bar('neutral', stats['neutral']!, maxCount, total),
-                          _bar('good', stats['good']!, maxCount, total),
-                          _bar('excellent', stats['excellent']!, maxCount, total),
-                        ],
+              else if (total == 0)
+                  SizedBox(
+                    height: h * 0.5,
+                    child: Center(
+                      child: Text(
+                        _safeParse(_startController.text) == null
+                            ? "Введите дату полностью"
+                            : "Данных не найдено",
+                        style: TextStyle(color: warmWhite.withOpacity(0.8)),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    _buildTotalBadge(total),
-                    const SizedBox(height: 40),
-                  ],
-                ),
+                  )
+                else
+                  Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        height: h * 0.48,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.fromLTRB(10, 20, 10, 15),
+                        decoration: BoxDecoration(
+                          color: warmWhite.withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _bar('terrible', _stats['terrible']!, maxCount, total, constraints.maxHeight),
+                                _bar('bad', _stats['bad']!, maxCount, total, constraints.maxHeight),
+                                _bar('neutral', _stats['neutral']!, maxCount, total, constraints.maxHeight),
+                                _bar('good', _stats['good']!, maxCount, total, constraints.maxHeight),
+                                _bar('excellent', _stats['excellent']!, maxCount, total, constraints.maxHeight),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTotalBadge(total),
+                      const SizedBox(height: 40),
+                    ],
+                  ),
             ],
           ),
         ),
@@ -213,7 +342,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
           bool isSel = selectedType == t;
           return Expanded(
             child: GestureDetector(
-              onTap: () => t == 'custom' ? setState(() => selectedType = 'custom') : _applyQuickPeriod(t),
+              onTap: () {
+                if (t == 'custom') {
+                  setState(() => selectedType = 'custom');
+                } else {
+                  _applyQuickPeriod(t);
+                }
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
                 alignment: Alignment.center,
@@ -226,8 +361,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                   style: TextStyle(
                       color: isSel ? warmWhite : textPrimary,
                       fontSize: 13,
-                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal
-                  ),
+                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal),
                 ),
               ),
             ),
@@ -283,6 +417,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
             setState(() {
               ctrl.text = DateFormat('dd.MM.yy').format(picked);
             });
+            _fetchAnalyticsData();
           }
         },
         child: Column(
@@ -298,9 +433,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                   hintText: "ДД.ММ.ГГ",
                   hintStyle: TextStyle(color: textSecondary.withOpacity(0.4)),
                   border: InputBorder.none,
-                  isDense: true
-              ),
-              onChanged: (_) => setState(() {}),
+                  isDense: true),
+              onChanged: (_) {
+                if (ctrl.text.length == 8) {
+                  _fetchAnalyticsData();
+                }
+              },
             ),
           ],
         ),
@@ -308,11 +446,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     );
   }
 
-  Widget _bar(String moodKey, int count, int maxCount, int total) {
-    double ratio = maxCount > 0 ? count / maxCount : 0;
-    double maxPossibleHeight = 240;
-    double barHeight = (ratio * maxPossibleHeight).clamp(15.0, maxPossibleHeight);
+  Widget _bar(String moodKey, int count, int maxCount, int total, double availableHeight) {
     double percent = total > 0 ? count / total : 0;
+    double reservedSpace = 100;
+    double maxPossibleBarHeight = (availableHeight - reservedSpace).clamp(20.0, availableHeight);
+
+    double ratio = maxCount > 0 ? count / maxCount : 0;
+    double barHeight = (ratio * maxPossibleBarHeight).clamp(15.0, maxPossibleBarHeight);
 
     final color = moodData[moodKey]['color'];
     final path = moodData[moodKey]['path'];
@@ -325,9 +465,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
               style: TextStyle(color: textPrimary, fontSize: 12, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 1000),
+            duration: const Duration(milliseconds: 800),
             curve: Curves.fastOutSlowIn,
-            width: 50,
+            width: 45,
             height: barHeight,
             decoration: BoxDecoration(
               color: color,
@@ -336,19 +476,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                 BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 3))
               ],
             ),
-            child: count > 0 && barHeight > 35
+            child: count > 0 && barHeight > 30
                 ? Center(child: Text("$count", style: TextStyle(color: warmWhite, fontSize: 13, fontWeight: FontWeight.w900)))
                 : null,
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 12),
           AnimatedBuilder(
             animation: _emojiController,
             builder: (context, child) {
               return Transform.translate(
-                offset: Offset(0, -5 * _gentleAnimation.value),
+                offset: Offset(0, -4 * _gentleAnimation.value),
                 child: SizedBox(
-                  width: 50,
-                  height: 50,
+                  width: 44,
+                  height: 44,
                   child: Lottie.asset(
                     path,
                     repeat: true,

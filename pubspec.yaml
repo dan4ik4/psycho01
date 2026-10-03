@@ -31,6 +31,8 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.3.1
+  flutter_secure_storage: ^9.2.2
+  dio: ^5.7.0
   confetti: ^0.8.0
   flutter_localizations:
     sdk: flutter
@@ -40,16 +42,11 @@ dependencies:
   agora_rtc_engine: ^6.3.2
   permission_handler: ^11.3.1
   lottie: ^3.1.2
-
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  supabase_flutter: ^2.0.7
-  http: ^1.2.0
   provider: ^6.1.2
   flutter_dotenv: ^5.1.0
   image_picker: ^1.2.1
+  uuid: ^4.3.3 # Добавлено для генерации request_id в AI чате
 
 dev_dependencies:
   flutter_test:

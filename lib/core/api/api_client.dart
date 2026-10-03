@@ -1,16 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'token_storage.dart';
-import 'auth_interceptor.dart';
-import 'safe_log_interceptor.dart';
+import '../auth/token_storage.dart';
+import 'interceptors/auth_interceptor.dart';
+import 'interceptors/safe_log_interceptor.dart';
 
 class ApiClient {
   late final Dio dio;
 
   ApiClient({
     required TokenStorage tokenStorage,
+    VoidCallback? onUnauthorized,
   }) {
-    final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000/api/v1/';
+    final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:8000/api/v1/';
 
     dio = Dio(
       BaseOptions(
@@ -23,7 +25,10 @@ class ApiClient {
     );
 
     dio.interceptors.addAll([
-      AuthInterceptor(tokenStorage: tokenStorage),
+      AuthInterceptor(
+        tokenStorage: tokenStorage,
+        onUnauthorized: onUnauthorized,
+      ),
       SafeLogInterceptor(),
     ]);
   }
