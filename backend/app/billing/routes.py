@@ -84,7 +84,7 @@ async def simulate_finish(
         else SlotEventType.MISSED,
         performed_by_id=user.id,
         patient_id=booking.patient_id,
-        comment="TEST_MODE: simulated attendance result",
+        comment="BILLING_TEST_MODE: simulated attendance result",
     )
     await db.commit()
     return await booking_view(db, booking)
@@ -116,7 +116,7 @@ class PolicyIn(BaseModel):
 
 
 def mock_only():
-    if not settings.TEST_MODE:
+    if not settings.BILLING_TEST_MODE:
         raise NotFoundError("Not found")
 
 
@@ -172,8 +172,8 @@ async def profile(
     return dict(
         hourly_net_minor=result.hourly_net_minor if result else None,
         currency=result.currency if result else settings.BILLING_CURRENCY,
-        test_mode=settings.TEST_MODE,
-        connected=settings.TEST_MODE
+        test_mode=settings.BILLING_TEST_MODE,
+        connected=settings.BILLING_TEST_MODE
         or bool(result and result.charges_enabled and result.payouts_enabled),
     )
 
@@ -209,7 +209,7 @@ async def set_rate(
 async def onboarding(
     db: AsyncSession = Depends(get_db), user: User = Depends(require_psychologist)
 ):
-    if settings.TEST_MODE:
+    if settings.BILLING_TEST_MODE:
         return {"test_mode": True, "connected": True, "url": None}
     await lock_account(db, user.id)
     result = await db.get(PsychologistBilling, user.id)
@@ -262,11 +262,11 @@ async def policy(
     user: User = Depends(require_superuser),
 ):
     record = PricingPolicy(
-        **data.model_dump(), test_mode=settings.TEST_MODE, created_by_id=user.id
+        **data.model_dump(), test_mode=settings.BILLING_TEST_MODE, created_by_id=user.id
     )
     db.add(record)
     await db.commit()
-    return {"id": record.id, "test_mode": settings.TEST_MODE, **data.model_dump()}
+    return {"id": record.id, "test_mode": settings.BILLING_TEST_MODE, **data.model_dump()}
 
 
 @router.get("/slots/{slot_id}/quote")
@@ -291,7 +291,7 @@ async def bookings(
         await db.scalars(
             select(Booking)
             .where(
-                Booking.test_mode == settings.TEST_MODE,
+                Booking.test_mode == settings.BILLING_TEST_MODE,
                 (Booking.patient_id == user.id) | (Booking.psychologist_id == user.id),
             )
             .order_by(Booking.created_at.desc())
@@ -397,7 +397,7 @@ async def earnings(
             )
             .where(
                 Earning.psychologist_id == user.id,
-                Earning.test_mode == settings.TEST_MODE,
+                Earning.test_mode == settings.BILLING_TEST_MODE,
                 Earning.created_at >= start,
                 Earning.created_at < end,
             )
@@ -412,7 +412,7 @@ async def earnings(
                 .join(MoneyOperation, MoneyOperation.payment_id == Payment.id)
                 .where(
                     Earning.psychologist_id == user.id,
-                    Earning.test_mode == settings.TEST_MODE,
+                    Earning.test_mode == settings.BILLING_TEST_MODE,
                     Earning.created_at >= start,
                     Earning.created_at < end,
                     MoneyOperation.kind == "transfer",
@@ -426,7 +426,7 @@ async def earnings(
         "year": year,
         "month": month,
         "timezone": settings.BILLING_TIMEZONE,
-        "test_mode": settings.TEST_MODE,
+        "test_mode": settings.BILLING_TEST_MODE,
         "totals": [
             dict(
                 currency=c,
@@ -449,7 +449,7 @@ async def operations(
             select(MoneyOperation)
             .join(Payment)
             .join(Booking)
-            .where(Booking.test_mode == settings.TEST_MODE)
+            .where(Booking.test_mode == settings.BILLING_TEST_MODE)
             .order_by(MoneyOperation.created_at.desc())
             .limit(100)
         )
@@ -476,7 +476,7 @@ async def payment_audit(
         await db.execute(
             select(Payment, Booking)
             .join(Booking)
-            .where(Booking.test_mode == settings.TEST_MODE)
+            .where(Booking.test_mode == settings.BILLING_TEST_MODE)
             .order_by(Payment.created_at.desc())
             .limit(100)
         )
@@ -502,7 +502,7 @@ async def payment_audit(
 async def event_audit(
     db: AsyncSession = Depends(get_db), user: User = Depends(require_superuser)
 ):
-    if settings.TEST_MODE:
+    if settings.BILLING_TEST_MODE:
         return []
     rows = (
         await db.scalars(
@@ -557,7 +557,7 @@ async def save_event(db, provider, external_id, payload):
 
 @router.post("/webhooks/stripe")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    if settings.TEST_MODE:
+    if settings.BILLING_TEST_MODE:
         raise NotFoundError("Not found")
     body = await request.body()
     if len(body) > 1_000_000:
@@ -571,7 +571,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.post("/webhooks/revenuecat")
 async def revenuecat_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    if settings.TEST_MODE:
+    if settings.BILLING_TEST_MODE:
         raise NotFoundError("Not found")
     if not settings.REVENUECAT_WEBHOOK_TOKEN or not hmac.compare_digest(
         request.headers.get("authorization", ""), settings.REVENUECAT_WEBHOOK_TOKEN

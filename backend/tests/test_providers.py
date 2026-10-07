@@ -43,7 +43,7 @@ def test_stripe_rejects_forged_stale_and_malformed_events(monkeypatch):
 
 
 async def test_webhooks_authentication_deduplication_and_sandbox(monkeypatch):
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
     monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "local-webhook-test")
     monkeypatch.setattr(settings, "REVENUECAT_WEBHOOK_TOKEN", "local-revenuecat-test")
     async with httpx.AsyncClient(
@@ -100,7 +100,7 @@ async def test_webhooks_authentication_deduplication_and_sandbox(monkeypatch):
 async def test_authoritative_subscription_sync_expiry_grace_and_sandbox(
     domain, monkeypatch
 ):
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
     user_id = domain[0].id
     expiry = now() + timedelta(days=3)
     data = {
@@ -147,7 +147,7 @@ async def test_authoritative_subscription_sync_expiry_grace_and_sandbox(
 
 
 async def test_revenuecat_event_reconciles_aliases(domain, monkeypatch):
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
     user_id = domain[0].id
 
     async def subscriber(self, received_id):
@@ -218,7 +218,7 @@ async def test_lost_checkout_response_recovers_after_reservation_expired(
                 "latest_charge": "ch_recovered",
             }
 
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
     monkeypatch.setattr(settings, "BILLING_LIVE_ENABLED", True)
     monkeypatch.setattr("app.billing.jobs.payment_provider", lambda *args: Provider())
     await reconcile_payments()
@@ -249,7 +249,7 @@ async def test_old_unknown_transfer_is_not_sent_twice(domain, monkeypatch):
             )
         )
         await db.commit()
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
 
     def must_not_call(*args):
         raise AssertionError("An uncertain old transfer must not be resubmitted")
@@ -278,7 +278,7 @@ async def test_fee_reconciliation_preserves_settlement_currency(domain, monkeypa
         assert charge_id == "ch_test"
         return {"balance_transaction": {"fee": 125, "currency": "eur"}}
 
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
     monkeypatch.setattr(settings, "BILLING_LIVE_ENABLED", True)
     monkeypatch.setattr(
         "app.billing.providers.stripe_connect.StripeConnectProvider.charge_details",

@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest_asyncio
 from sqlalchemy import text
 
-if os.environ.get("TEST_MODE", "").lower() != "true" or os.environ.get(
+if any(os.environ.get(flag, "").lower() != "true" for flag in (
+    "EMAIL_TEST_MODE", "AI_TEST_MODE", "BILLING_TEST_MODE", "AGORA_TEST_MODE"
+)) or os.environ.get(
     "DB_HOST"
 ) not in ("127.0.0.1", "localhost"):
     raise RuntimeError(

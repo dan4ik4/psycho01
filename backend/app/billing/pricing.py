@@ -58,7 +58,7 @@ def calculate_quote(hourly_net_minor, seconds, currency, rates):
             processor_fixed_minor=fixed,
         ),
         rate_basis="gross",
-        test_mode=settings.TEST_MODE,
+        test_mode=settings.BILLING_TEST_MODE,
     )
 
 
@@ -68,7 +68,7 @@ async def quote_slot(db, slot):
         raise BillingError("rate_not_set", "Psychologist must set an hourly rate")
     policy = await db.scalar(
         select(PricingPolicy)
-        .where(PricingPolicy.test_mode == settings.TEST_MODE)
+        .where(PricingPolicy.test_mode == settings.BILLING_TEST_MODE)
         .order_by(PricingPolicy.created_at.desc(), PricingPolicy.id.desc())
         .limit(1)
     )
@@ -79,7 +79,7 @@ async def quote_slot(db, slot):
             policy.processor_bps,
             policy.processor_fixed_minor,
         )
-    elif settings.TEST_MODE:
+    elif settings.BILLING_TEST_MODE:
         rates = (0, 0, 0, 0)
     else:
         rates = (
@@ -103,6 +103,6 @@ async def quote_slot(db, slot):
     quote["policy_id"] = (
         str(policy.id)
         if policy
-        else ("mock-zero-rates" if settings.TEST_MODE else "server-settings")
+        else ("mock-zero-rates" if settings.BILLING_TEST_MODE else "server-settings")
     )
     return quote

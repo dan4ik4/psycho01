@@ -44,6 +44,8 @@ def main():
     env.update(
         DB_NAME=database, PSYCHO_TEST_DATABASE=database,
         TEST_MODE="true", SCHEDULER_ENABLED="false", BILLING_LIVE_ENABLED="false",
+        EMAIL_TEST_MODE="true", AI_TEST_MODE="true",
+        BILLING_TEST_MODE="true", AGORA_TEST_MODE="true",
         JWT_SECRET=secrets.token_urlsafe(48),
         REG_CODE_SECRET=secrets.token_urlsafe(48),
         PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1",

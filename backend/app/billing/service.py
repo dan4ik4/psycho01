@@ -52,7 +52,7 @@ async def reserve_booking(db, slot_id, user, request_id):
         )
     )
     if previous:
-        if previous.slot_id != slot_id or previous.test_mode != settings.TEST_MODE:
+        if previous.slot_id != slot_id or previous.test_mode != settings.BILLING_TEST_MODE:
             raise ConflictError("Request id already used for another booking")
         return previous
     assignment_data = await get_latest_patient_assignment(db, user.id)
@@ -88,7 +88,7 @@ async def reserve_booking(db, slot_id, user, request_id):
             raise ConflictError("Slot is already reserved")
     quote = await quote_slot(db, slot)
     profile = await db.get(PsychologistBilling, slot.psychologist_id)
-    if not settings.TEST_MODE:
+    if not settings.BILLING_TEST_MODE:
         if not settings.BILLING_LIVE_ENABLED:
             raise BillingError(
                 "live_billing_disabled", "Live billing is not enabled", status_code=503
@@ -108,7 +108,7 @@ async def reserve_booking(db, slot_id, user, request_id):
         psychologist_id=slot.psychologist_id,
         assignment_id=assignment.id,
         request_id=request_id,
-        test_mode=settings.TEST_MODE,
+        test_mode=settings.BILLING_TEST_MODE,
         quote=quote,
         hold_until=min(
             slot.start_at, now() + timedelta(minutes=settings.BOOKING_HOLD_MINUTES)
@@ -119,7 +119,7 @@ async def reserve_booking(db, slot_id, user, request_id):
     db.add(
         Payment(
             booking_id=booking.id,
-            provider="mock" if settings.TEST_MODE else "stripe",
+            provider="mock" if settings.BILLING_TEST_MODE else "stripe",
             amount_minor=quote["amount_minor"],
             currency=quote["currency"],
             destination=profile.stripe_account_id,
@@ -133,7 +133,7 @@ async def owned_booking(db, booking_id, user):
     booking = await db.get(Booking, booking_id)
     if (
         not booking
-        or booking.test_mode != settings.TEST_MODE
+        or booking.test_mode != settings.BILLING_TEST_MODE
         or user.id not in (booking.patient_id, booking.psychologist_id)
         and not user.is_superuser
     ):
@@ -222,7 +222,7 @@ async def confirm_payment(
     if not initial:
         raise NotFoundError("Payment not found")
     slot, booking, payment = await lock_booking(db, initial.booking_id)
-    if booking.test_mode != settings.TEST_MODE:
+    if booking.test_mode != settings.BILLING_TEST_MODE:
         raise ConflictError("Payment environment mismatch")
     if amount_minor != payment.amount_minor or currency.upper() != payment.currency:
         raise BillingError(
@@ -342,7 +342,7 @@ async def assert_call_paid(db, event):
         return
     payment = await db.scalar(select(Payment).where(Payment.booking_id == booking.id))
     if (
-        booking.test_mode != settings.TEST_MODE
+        booking.test_mode != settings.BILLING_TEST_MODE
         or booking.status != "confirmed"
         or not payment
         or payment.status != "paid"

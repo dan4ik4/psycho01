@@ -4,5 +4,5 @@ from app.core.settings import settings
 
 
 def payment_provider(test_mode=None):
-    mode = settings.TEST_MODE if test_mode is None else test_mode
+    mode = settings.BILLING_TEST_MODE if test_mode is None else test_mode
     return MockPaymentProvider() if mode else StripeConnectProvider()

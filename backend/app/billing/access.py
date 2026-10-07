@@ -29,7 +29,7 @@ async def paid_access(db, user_id):
     sub = await db.scalar(
         select(Subscription).where(
             Subscription.user_id == user_id,
-            Subscription.test_mode == settings.TEST_MODE,
+            Subscription.test_mode == settings.BILLING_TEST_MODE,
         )
     )
     return sub if sub and sub.expires_at and sub.expires_at > now() else None
@@ -51,11 +51,11 @@ async def quota_for_message(db, user_id):
     day, reset = usage_period()
     await db.execute(
         insert(AiUsage)
-        .values(user_id=user_id, day=day, test_mode=settings.TEST_MODE, used=0)
+        .values(user_id=user_id, day=day, test_mode=settings.BILLING_TEST_MODE, used=0)
         .on_conflict_do_nothing()
     )
     usage = await db.get(
-        AiUsage, (user_id, day, settings.TEST_MODE), with_for_update=True
+        AiUsage, (user_id, day, settings.BILLING_TEST_MODE), with_for_update=True
     )
     if usage.used >= settings.AI_FREE_DAILY_LIMIT:
         raise BillingError(
@@ -70,9 +70,9 @@ async def quota_for_message(db, user_id):
 async def access_summary(db, user_id):
     sub = await paid_access(db, user_id)
     day, reset = usage_period()
-    usage = await db.get(AiUsage, (user_id, day, settings.TEST_MODE))
+    usage = await db.get(AiUsage, (user_id, day, settings.BILLING_TEST_MODE))
     return dict(
-        test_mode=settings.TEST_MODE,
+        test_mode=settings.BILLING_TEST_MODE,
         plan="paid" if sub else "free",
         expires_at=sub.expires_at if sub else None,
         remaining_messages=None

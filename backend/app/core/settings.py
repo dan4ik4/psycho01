@@ -1,6 +1,6 @@
 import os
 from zoneinfo import ZoneInfo
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     OPENAI_MESSAGE_MAX_LENGTH: int = 10000
 
     TEST_MODE: bool = False
+    # Legacy TEST_MODE supplies defaults only; explicit per-service flags win.
+    EMAIL_TEST_MODE: bool | None = None
+    AI_TEST_MODE: bool | None = None
+    BILLING_TEST_MODE: bool | None = None
+    AGORA_TEST_MODE: bool | None = None
     SCHEDULER_ENABLED: bool = True
     BILLING_CURRENCY: str = "RUB"
     BILLING_TIMEZONE: str = "Europe/Moscow"
@@ -77,6 +82,15 @@ class Settings(BaseSettings):
         )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="after")
+    def resolve_test_modes(self):
+        for name in (
+            "EMAIL_TEST_MODE", "AI_TEST_MODE", "BILLING_TEST_MODE", "AGORA_TEST_MODE"
+        ):
+            if getattr(self, name) is None:
+                setattr(self, name, self.TEST_MODE)
+        return self
 
     @field_validator("BILLING_TIMEZONE")
     @classmethod

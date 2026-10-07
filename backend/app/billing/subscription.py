@@ -10,7 +10,7 @@ from app.core.settings import settings
 
 
 async def mock_purchase(db, user_id, request_id):
-    if not settings.TEST_MODE:
+    if not settings.BILLING_TEST_MODE:
         raise NotFoundError("Not found")
     await lock_account(db, user_id)
     existing = await db.scalar(
@@ -47,7 +47,7 @@ async def mock_purchase(db, user_id, request_id):
 
 
 async def sync_subscription(db, user_id, *, commit=True):
-    if settings.TEST_MODE:
+    if settings.BILLING_TEST_MODE:
         return await access_summary(db, user_id)
     await lock_account(db, user_id)
     # Serialize subscriber refreshes; always request authoritative current state.

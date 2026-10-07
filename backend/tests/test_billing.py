@@ -335,7 +335,7 @@ async def test_mock_endpoints_off_in_live(domain, monkeypatch):
     from app.billing.routes import mock_only
     from app.core.errors import NotFoundError
 
-    monkeypatch.setattr(settings, "TEST_MODE", False)
+    monkeypatch.setattr(settings, "BILLING_TEST_MODE", False)
     with pytest.raises(NotFoundError):
         mock_only()
 

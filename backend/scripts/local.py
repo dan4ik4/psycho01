@@ -18,9 +18,11 @@ def local_environment():
     env.update({k: v for k, v in dotenv_values(path).items() if v is not None})
     if (
         env.get("DB_HOST") not in ("127.0.0.1", "localhost")
-        or env.get("TEST_MODE", "").lower() != "true"
+        or any(env.get(flag, env.get("TEST_MODE", "false")).lower() != "true"
+               for flag in ("EMAIL_TEST_MODE", "AI_TEST_MODE",
+                            "BILLING_TEST_MODE", "AGORA_TEST_MODE"))
     ):
-        raise SystemExit("Local runner requires a loopback database and TEST_MODE=true")
+        raise SystemExit("Local runner requires a loopback database and all service test modes=true")
     env["PYTHONUTF8"] = "1"
     env["PSYCHO_ENV_FILE"] = str(path)
     return env

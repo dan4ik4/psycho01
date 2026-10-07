@@ -131,7 +131,7 @@ async def process_operations():
                 .join(Payment)
                 .join(Booking)
                 .where(
-                    Booking.test_mode == settings.TEST_MODE,
+                    Booking.test_mode == settings.BILLING_TEST_MODE,
                     MoneyOperation.status.in_(["pending", "processing"]),
                     MoneyOperation.retry_at <= now(),
                     (
@@ -147,7 +147,7 @@ async def process_operations():
                 break
             operation_id = operation.id
             if (
-                not settings.TEST_MODE
+                not settings.BILLING_TEST_MODE
                 and operation.attempts > 0
                 and not operation.external_id
                 and operation.created_at < now() - timedelta(hours=23)
@@ -215,7 +215,7 @@ async def process_operations():
 
 
 async def reconcile_payments():
-    if settings.TEST_MODE or not settings.BILLING_LIVE_ENABLED:
+    if settings.BILLING_TEST_MODE or not settings.BILLING_LIVE_ENABLED:
         return
     async with AsyncSessionLocal() as db:
         payments = list(
@@ -290,7 +290,7 @@ async def billing_job():
 
 async def reconcile_processing_fees():
     """Store the actual charge fee in the provider's settlement currency."""
-    if settings.TEST_MODE or not settings.BILLING_LIVE_ENABLED:
+    if settings.BILLING_TEST_MODE or not settings.BILLING_LIVE_ENABLED:
         return
     from app.billing.providers.stripe_connect import StripeConnectProvider
 
@@ -329,7 +329,7 @@ async def reconcile_processing_fees():
 
 async def reconcile_subscriptions():
     """Recover missed renewal/refund events, including subscriptions that just expired."""
-    if settings.TEST_MODE or not settings.BILLING_LIVE_ENABLED:
+    if settings.BILLING_TEST_MODE or not settings.BILLING_LIVE_ENABLED:
         return
     from app.billing.models import Subscription
 

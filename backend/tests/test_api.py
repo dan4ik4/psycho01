@@ -221,7 +221,8 @@ async def test_public_routes(path):
 async def test_no_demo_frontend_in_any_mode(monkeypatch, test_mode):
     from app.core.settings import settings
 
-    monkeypatch.setattr(settings, "TEST_MODE", test_mode)
+    for flag in ("EMAIL_TEST_MODE", "AI_TEST_MODE", "BILLING_TEST_MODE", "AGORA_TEST_MODE"):
+        monkeypatch.setattr(settings, flag, test_mode)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
