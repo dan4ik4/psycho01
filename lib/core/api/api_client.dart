@@ -12,11 +12,16 @@ class ApiClient {
     required TokenStorage tokenStorage,
     VoidCallback? onUnauthorized,
   }) {
-    final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:8000/api/v1/';
+    final baseUrl =
+        dotenv.env['API_BASE_URL'] ?? 'https://api.oakle.app/api/v1/';
+    final configuredUri = Uri.parse(baseUrl);
+    final apiPrefix = configuredUri.path.endsWith('/')
+        ? configuredUri.path
+        : '${configuredUri.path}/';
 
     dio = Dio(
       BaseOptions(
-        baseUrl: baseUrl.endsWith('/') ? baseUrl : '$baseUrl/',
+        baseUrl: '${configuredUri.origin}/',
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 20),
         sendTimeout: const Duration(seconds: 45),
@@ -25,6 +30,16 @@ class ApiClient {
     );
 
     dio.interceptors.addAll([
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (!options.path.startsWith('http://') &&
+              !options.path.startsWith('https://')) {
+            final route = options.path.replaceFirst(RegExp(r'^/+'), '');
+            options.path = '${configuredUri.origin}$apiPrefix$route';
+          }
+          handler.next(options);
+        },
+      ),
       AuthInterceptor(
         tokenStorage: tokenStorage,
         onUnauthorized: onUnauthorized,

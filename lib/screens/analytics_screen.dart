@@ -3,22 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
-import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   final Map<String, Map<String, dynamic>>? notesData;
 
-  const AnalyticsScreen({
-    super.key,
-    this.notesData,
-  });
+  const AnalyticsScreen({super.key, this.notesData});
 
   @override
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
 }
 
-class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderStateMixin {
+class _AnalyticsScreenState extends State<AnalyticsScreen>
+    with TickerProviderStateMixin {
   String selectedType = 'week';
   final _startController = TextEditingController();
   final _endController = TextEditingController();
@@ -32,7 +28,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   late AnimationController _emojiController;
   late Animation<double> _gentleAnimation;
 
-  late final Dio _dio;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -45,42 +40,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
   };
 
   final Map<String, dynamic> moodData = {
-    'terrible': {'path': 'assets/lottie/terrible.json', 'color': Colors.redAccent},
+    'terrible': {
+      'path': 'assets/lottie/terrible.json',
+      'color': Colors.redAccent,
+    },
     'bad': {'path': 'assets/lottie/bad.json', 'color': Colors.orange},
     'neutral': {'path': 'assets/lottie/neutral.json', 'color': Colors.amber},
     'good': {'path': 'assets/lottie/good.json', 'color': Colors.lightGreen},
-    'excellent': {'path': 'assets/lottie/excellent.json', 'color': Colors.green},
+    'excellent': {
+      'path': 'assets/lottie/excellent.json',
+      'color': Colors.green,
+    },
   };
 
   @override
   void initState() {
     super.initState();
-    _initDio();
     _initAnimation();
     _applyQuickPeriod('week');
-  }
-
-  void _initDio() {
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: 'https://api.oakle.app/api/v1',
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 10),
-      ),
-    );
-
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) async {
-          final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString('auth_token');
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
-          }
-          return handler.next(options);
-        },
-      ),
-    );
   }
 
   void _initAnimation() {
@@ -91,17 +68,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
 
     _gentleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeInOutSine)),
+        tween: Tween<double>(
+          begin: 0.0,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOutSine)),
         weight: 40,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeInOutSine)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeInOutSine)),
         weight: 40,
       ),
-      TweenSequenceItem(
-        tween: ConstantTween<double>(0.0),
-        weight: 20,
-      ),
+      TweenSequenceItem(tween: ConstantTween<double>(0.0), weight: 20),
     ]).animate(_emojiController);
   }
 
@@ -187,36 +167,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       _errorMessage = null;
     });
 
-    try {
-      final response = await _dio.get(
-        '/analytics/mood',
-        queryParameters: {
-          'start_date': DateFormat('yyyy-MM-dd').format(start),
-          'end_date': DateFormat('yyyy-MM-dd').format(end),
-        },
-      );
-
-      if (mounted && response.statusCode == 200 && response.data != null) {
-        final Map<String, dynamic> rawStats = response.data['stats'] ?? response.data;
-        setState(() {
-          _stats = {
-            'terrible': rawStats['terrible'] ?? 0,
-            'bad': rawStats['bad'] ?? 0,
-            'neutral': rawStats['neutral'] ?? 0,
-            'good': rawStats['good'] ?? 0,
-            'excellent': rawStats['excellent'] ?? 0,
-          };
-        });
-      } else {
-        _calculateStatsFromLocalData(start, end);
-      }
-    } catch (_) {
-      _calculateStatsFromLocalData(start, end);
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    _calculateStatsFromLocalData(start, end);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
@@ -278,49 +230,79 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                   ),
                 )
               else if (total == 0)
-                  SizedBox(
-                    height: h * 0.5,
-                    child: Center(
-                      child: Text(
-                        _safeParse(_startController.text) == null
-                            ? "Введите дату полностью"
-                            : "Данных не найдено",
-                        style: TextStyle(color: warmWhite.withOpacity(0.8)),
+                SizedBox(
+                  height: h * 0.5,
+                  child: Center(
+                    child: Text(
+                      _safeParse(_startController.text) == null
+                          ? "Введите дату полностью"
+                          : "Данных не найдено",
+                      style: TextStyle(color: warmWhite.withOpacity(0.8)),
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      height: h * 0.48,
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.fromLTRB(10, 20, 10, 15),
+                      decoration: BoxDecoration(
+                        color: warmWhite.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _bar(
+                                'terrible',
+                                _stats['terrible']!,
+                                maxCount,
+                                total,
+                                constraints.maxHeight,
+                              ),
+                              _bar(
+                                'bad',
+                                _stats['bad']!,
+                                maxCount,
+                                total,
+                                constraints.maxHeight,
+                              ),
+                              _bar(
+                                'neutral',
+                                _stats['neutral']!,
+                                maxCount,
+                                total,
+                                constraints.maxHeight,
+                              ),
+                              _bar(
+                                'good',
+                                _stats['good']!,
+                                maxCount,
+                                total,
+                                constraints.maxHeight,
+                              ),
+                              _bar(
+                                'excellent',
+                                _stats['excellent']!,
+                                maxCount,
+                                total,
+                                constraints.maxHeight,
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
-                  )
-                else
-                  Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        height: h * 0.48,
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        padding: const EdgeInsets.fromLTRB(10, 20, 10, 15),
-                        decoration: BoxDecoration(
-                          color: warmWhite.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                _bar('terrible', _stats['terrible']!, maxCount, total, constraints.maxHeight),
-                                _bar('bad', _stats['bad']!, maxCount, total, constraints.maxHeight),
-                                _bar('neutral', _stats['neutral']!, maxCount, total, constraints.maxHeight),
-                                _bar('good', _stats['good']!, maxCount, total, constraints.maxHeight),
-                                _bar('excellent', _stats['excellent']!, maxCount, total, constraints.maxHeight),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTotalBadge(total),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                    const SizedBox(height: 20),
+                    _buildTotalBadge(total),
+                    const SizedBox(height: 40),
+                  ],
+                ),
             ],
           ),
         ),
@@ -338,7 +320,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       ),
       child: Row(
         children: ['week', 'month', 'year', 'custom'].map((t) {
-          String label = t == 'week' ? "Неделя" : t == 'month' ? "Месяц" : t == 'year' ? "Год" : "Свой";
+          String label = t == 'week'
+              ? "Неделя"
+              : t == 'month'
+              ? "Месяц"
+              : t == 'year'
+              ? "Год"
+              : "Свой";
           bool isSel = selectedType == t;
           return Expanded(
             child: GestureDetector(
@@ -359,9 +347,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                 child: Text(
                   label,
                   style: TextStyle(
-                      color: isSel ? warmWhite : textPrimary,
-                      fontSize: 13,
-                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal),
+                    color: isSel ? warmWhite : textPrimary,
+                    fontSize: 13,
+                    fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
               ),
             ),
@@ -383,7 +372,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         child: Row(
           children: [
             _dateEntry(_startController, "ОТ"),
-            Container(width: 1, height: 30, color: textSecondary.withOpacity(0.2), margin: const EdgeInsets.symmetric(horizontal: 15)),
+            Container(
+              width: 1,
+              height: 30,
+              color: textSecondary.withOpacity(0.2),
+              margin: const EdgeInsets.symmetric(horizontal: 15),
+            ),
             _dateEntry(_endController, "ДО"),
           ],
         ),
@@ -423,17 +417,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(color: accentPurple, fontSize: 10, fontWeight: FontWeight.bold)),
+            Text(
+              label,
+              style: TextStyle(
+                color: accentPurple,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             TextField(
               controller: ctrl,
               keyboardType: TextInputType.number,
               inputFormatters: [SmartDateFormatter()],
-              style: TextStyle(color: textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
               decoration: InputDecoration(
-                  hintText: "ДД.ММ.ГГ",
-                  hintStyle: TextStyle(color: textSecondary.withOpacity(0.4)),
-                  border: InputBorder.none,
-                  isDense: true),
+                hintText: "ДД.ММ.ГГ",
+                hintStyle: TextStyle(color: textSecondary.withOpacity(0.4)),
+                border: InputBorder.none,
+                isDense: true,
+              ),
               onChanged: (_) {
                 if (ctrl.text.length == 8) {
                   _fetchAnalyticsData();
@@ -446,13 +452,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
     );
   }
 
-  Widget _bar(String moodKey, int count, int maxCount, int total, double availableHeight) {
+  Widget _bar(
+    String moodKey,
+    int count,
+    int maxCount,
+    int total,
+    double availableHeight,
+  ) {
     double percent = total > 0 ? count / total : 0;
     double reservedSpace = 100;
-    double maxPossibleBarHeight = (availableHeight - reservedSpace).clamp(20.0, availableHeight);
+    double maxPossibleBarHeight = (availableHeight - reservedSpace).clamp(
+      20.0,
+      availableHeight,
+    );
 
     double ratio = maxCount > 0 ? count / maxCount : 0;
-    double barHeight = (ratio * maxPossibleBarHeight).clamp(15.0, maxPossibleBarHeight);
+    double barHeight = (ratio * maxPossibleBarHeight).clamp(
+      15.0,
+      maxPossibleBarHeight,
+    );
 
     final color = moodData[moodKey]['color'];
     final path = moodData[moodKey]['path'];
@@ -461,8 +479,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text("${(percent * 100).toInt()}%",
-              style: TextStyle(color: textPrimary, fontSize: 12, fontWeight: FontWeight.w900)),
+          Text(
+            "${(percent * 100).toInt()}%",
+            style: TextStyle(
+              color: textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
           const SizedBox(height: 8),
           AnimatedContainer(
             duration: const Duration(milliseconds: 800),
@@ -473,11 +497,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
               color: color,
               borderRadius: BorderRadius.circular(10),
               boxShadow: [
-                BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 3))
+                BoxShadow(
+                  color: color.withOpacity(0.4),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
               ],
             ),
             child: count > 0 && barHeight > 30
-                ? Center(child: Text("$count", style: TextStyle(color: warmWhite, fontSize: 13, fontWeight: FontWeight.w900)))
+                ? Center(
+                    child: Text(
+                      "$count",
+                      style: TextStyle(
+                        color: warmWhite,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  )
                 : null,
           ),
           const SizedBox(height: 12),
@@ -489,11 +526,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
                 child: SizedBox(
                   width: 44,
                   height: 44,
-                  child: Lottie.asset(
-                    path,
-                    repeat: true,
-                    animate: true,
-                  ),
+                  child: Lottie.asset(path, repeat: true, animate: true),
                 ),
               );
             },
@@ -514,8 +547,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text("Всего записей:", style: TextStyle(color: textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
-          Text("$total", style: TextStyle(color: textPrimary, fontSize: 24, fontWeight: FontWeight.w900)),
+          Text(
+            "Всего записей:",
+            style: TextStyle(
+              color: textSecondary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            "$total",
+            style: TextStyle(
+              color: textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -524,7 +571,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> with TickerProviderSt
 
 class SmartDateFormatter extends TextInputFormatter {
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     if (newValue.text.length < oldValue.text.length) return newValue;
     final text = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
     final buffer = StringBuffer();

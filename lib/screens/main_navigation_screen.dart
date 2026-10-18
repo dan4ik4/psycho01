@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/api/api_client.dart';
 import '../core/auth/token_storage.dart';
+import '../core/widgets/oakle_notice.dart';
+import '../screens/profile_screen.dart';
 import 'home_screen.dart';
 import 'chat_screen.dart';
 import 'SpecialistSelectionScreen.dart';
@@ -13,13 +15,19 @@ import 'PsychologistDashboard.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final String? forcedRole;
-  const MainNavigationScreen({Key? key, this.forcedRole}) : super(key: key);
+  final ApiClient apiClient;
+  const MainNavigationScreen({
+    Key? key,
+    this.forcedRole,
+    required this.apiClient,
+  }) : super(key: key);
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  static const MethodChannel _emailChannel = MethodChannel('soulbuddy/email');
   int _selectedIndex = 0;
 
   final Color deepPurple = const Color(0xFFB0A6E8);
@@ -30,99 +38,69 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   bool isProfileOpen = false;
 
-  String userName = "Загрузка...";
+  String userName = "Пользователь";
   String userEmail = "";
   String userRole = "client";
-  String userGender = "---";
   int userAge = 0;
   String assignedTherapist = "Не назначен";
-
-  late final Dio _dio;
-  late final ApiClient _apiClient;
+  bool _openClientsOnDashboard = false;
 
   @override
   void initState() {
     super.initState();
-    _initDio();
-    _apiClient = ApiClient(tokenStorage: TokenStorage());
+    userRole = widget.forcedRole ?? userRole;
     _loadUserData();
     _hideSystemUI();
   }
 
-  void _initDio() {
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: 'https://api.yourdomain.com/v1',
-        connectTimeout: const Duration(seconds: 10),
-        receiveTimeout: const Duration(seconds: 10),
-        headers: {'Content-Type': 'application/json'},
-      ),
-    );
-
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) async {
-          final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString('auth_token');
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
-          }
-          return handler.next(options);
-        },
-      ),
-    );
-  }
-
   void _hideSystemUI() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+    );
   }
 
   Future<void> _loadUserData() async {
-    if (widget.forcedRole != null) {
-      setState(() {
-        userRole = widget.forcedRole!;
-        userName = userRole == 'specialist' ? "Тестовый Профи" : "Тестовый Клиент";
-        userEmail = "test@example.com";
-      });
-      return;
-    }
-
+    // Показываем последнее сохранённое имя сразу, не ожидая сетевого ответа.
     final prefs = await SharedPreferences.getInstance();
-
-    setState(() {
-      userEmail = prefs.getString('user_email') ?? "";
-      userName = prefs.getString('user_name') ?? "Пользователь";
-      userRole = prefs.getString('user_role') ?? "client";
-      userGender = prefs.getString('user_gender') ?? "---";
-      userAge = prefs.getInt('user_age') ?? 0;
-    });
-
+    final cachedName = prefs.getString('profile_display_name');
+    final cachedEmail = prefs.getString('profile_email');
+    if (mounted && cachedName != null && cachedName.isNotEmpty) {
+      setState(() {
+        userName = cachedName;
+        userEmail = cachedEmail ?? userEmail;
+      });
+    }
     try {
-      final response = await _dio.get('/user/profile');
-      if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
-
-        setState(() {
-          userEmail = data['email'] ?? userEmail;
-          userName = data['full_name'] ?? userName;
-          userRole = data['role'] ?? userRole;
-          userGender = data['gender'] ?? userGender;
-          userAge = data['age'] ?? userAge;
-          assignedTherapist = data['assigned_therapist'] ?? "Не назначен";
-        });
-
-        await prefs.setString('user_email', userEmail);
-        await prefs.setString('user_name', userName);
-        await prefs.setString('user_role', userRole);
-        await prefs.setString('user_gender', userGender);
-        await prefs.setInt('user_age', userAge);
+      final response = await widget.apiClient.dio.get('/users/me');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final parts = [data['first_name'], data['last_name']]
+          .where((part) => part != null && part.toString().trim().isNotEmpty)
+          .join(' ');
+      if (!mounted) return;
+      final birthDate = DateTime.tryParse(data['birth_date']?.toString() ?? '');
+      var age = 0;
+      if (birthDate != null) {
+        final today = DateTime.now();
+        age = today.year - birthDate.year;
+        if (today.month < birthDate.month ||
+            (today.month == birthDate.month && today.day < birthDate.day)) {
+          age--;
+        }
       }
+      setState(() {
+        userEmail = data['email']?.toString() ?? '';
+        userName = parts.isEmpty ? 'Пользователь' : parts;
+        userRole = data['is_psychologist'] == true ? 'specialist' : 'client';
+        userAge = age;
+      });
+      await prefs.setString('profile_display_name', userName);
+      await prefs.setString('profile_email', userEmail);
     } on DioException catch (e) {
       debugPrint("Ошибка загрузки профиля: ${e.message}");
       if (e.response?.statusCode == 401) {
@@ -131,17 +109,47 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
-  Future<void> _performLogout() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _requestPsychologistStatus() async {
+    final subject = 'Заявка на получение статуса психолога';
+    final body =
+        '''Здравствуйте!
+
+Прошу рассмотреть возможность изменить роль моего аккаунта на психолога.
+Имя: $userName
+Email аккаунта: $userEmail
+
+Пожалуйста, сообщите, если нужны дополнительные документы или сведения.''';
     try {
-      await _dio.post('/auth/logout');
-    } catch (_) {} finally {
-      await prefs.clear();
+      await _emailChannel.invokeMethod<bool>('composeEmail', {
+        'subject': subject,
+        'body': body,
+      });
+      if (!mounted) return;
+      showOakleNotice(
+        context,
+        'Черновик письма открыт. Укажите email администратора и отправьте письмо. Роль изменит администратор.',
+      );
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      showOakleNotice(
+        context,
+        'Не удалось открыть почту (${error.message ?? 'почтовое приложение не найдено'}). Напишите администратору вручную.',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _performLogout() async {
+    try {
+      await widget.apiClient.dio.post('/auth/jwt/logout');
+    } catch (_) {
+    } finally {
+      await TokenStorage().clearToken();
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const AuthScreen()),
-              (route) => false,
+          (route) => false,
         );
       }
     }
@@ -162,10 +170,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final List<Widget> screens = [
       HomeScreen(
         onOpenProfile: () => setState(() => isProfileOpen = true),
-        apiClient: _apiClient,
+        apiClient: widget.apiClient,
+        displayName: userName,
+        isPsychologist: userRole == 'specialist',
       ),
-      const ChatScreen(),
-      userRole == 'specialist' ? PsychologistDashboard() : const SpecialistListScreen(),
+      ChatScreen(
+        apiClient: widget.apiClient,
+        isPsychologist: userRole == 'specialist',
+        onOpenPsychologistClients: userRole == 'specialist'
+            ? () => setState(() {
+                _openClientsOnDashboard = true;
+                _selectedIndex = 2;
+              })
+            : null,
+      ),
+      userRole == 'specialist'
+          ? PsychologistDashboard(
+              apiClient: widget.apiClient,
+              initialTab: _openClientsOnDashboard ? 1 : 0,
+            )
+          : SpecialistListScreen(apiClient: widget.apiClient),
     ];
 
     return Scaffold(
@@ -182,12 +206,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
           // Нижняя панель навигации
           Positioned(
-            left: 0, right: 0, bottom: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: Container(
               height: bottomBgHeight,
               decoration: BoxDecoration(
                 color: deepPurple,
-                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -2))],
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 10,
+                    offset: Offset(0, -2),
+                  ),
+                ],
               ),
               child: Container(
                 color: warmWhite.withOpacity(0.8),
@@ -239,18 +271,25 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             duration: const Duration(milliseconds: 400),
             curve: Curves.easeOutQuart,
             left: isProfileOpen ? 0 : -panelWidth,
-            top: 0, bottom: 0,
+            top: 0,
+            bottom: 0,
             child: Container(
               width: panelWidth,
               decoration: const BoxDecoration(
                 color: Color(0xFFB0A6E8),
-                borderRadius: BorderRadius.only(topRight: Radius.circular(30), bottomRight: Radius.circular(30)),
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
+                ),
                 boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 20)],
               ),
               child: Container(
                 decoration: BoxDecoration(
                   color: warmWhite.withOpacity(0.85),
-                  borderRadius: const BorderRadius.only(topRight: Radius.circular(30), bottomRight: Radius.circular(30)),
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(30),
+                    bottomRight: Radius.circular(30),
+                  ),
                 ),
                 child: SafeArea(
                   child: Padding(
@@ -264,8 +303,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                               backgroundColor: accentPurple,
                               radius: 24,
                               child: Text(
-                                userName.isNotEmpty ? userName[0].toUpperCase() : "U",
-                                style: TextStyle(color: warmWhite, fontSize: 20, fontWeight: FontWeight.bold),
+                                userName.isNotEmpty
+                                    ? userName[0].toUpperCase()
+                                    : "U",
+                                style: TextStyle(
+                                  color: warmWhite,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 14),
@@ -275,12 +320,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                 children: [
                                   Text(
                                     userName,
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textPrimary),
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: textPrimary,
+                                    ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   Text(
-                                    userRole == 'specialist' ? "Специалист" : "Клиент",
-                                    style: TextStyle(color: accentPurple, fontSize: 12, fontWeight: FontWeight.w600),
+                                    userRole == 'specialist'
+                                        ? "Специалист"
+                                        : "Клиент",
+                                    style: TextStyle(
+                                      color: accentPurple,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -289,16 +344,61 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         ),
                         const SizedBox(height: 28),
 
-                        _infoItem(Icons.wc, "Пол", userGender),
-                        _infoItem(Icons.cake_outlined, "Возраст", userAge > 0 ? "$userAge лет" : "Не указан"),
-                        _infoItem(Icons.email_outlined, "Email", userEmail.isNotEmpty ? userEmail : "Не указан"),
+                        if (userAge > 0)
+                          _infoItem(
+                            Icons.cake_outlined,
+                            "Возраст",
+                            "$userAge лет",
+                          ),
+                        _infoItem(
+                          Icons.email_outlined,
+                          "Email",
+                          userEmail.isNotEmpty ? userEmail : "Не указан",
+                        ),
 
                         if (userRole != 'specialist') ...[
                           const Divider(height: 32, color: Colors.black12),
-                          _infoItem(Icons.psychology, "Ваш специалист", assignedTherapist),
+                          _infoItem(
+                            Icons.psychology,
+                            "Ваш специалист",
+                            assignedTherapist,
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _requestPsychologistStatus,
+                              icon: const Icon(
+                                Icons.mark_email_unread_outlined,
+                              ),
+                              label: const Text('Стать психологом'),
+                            ),
+                          ),
                         ],
 
                         const Spacer(),
+
+                        if (userRole == 'specialist') ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ProfileScreen(
+                                      apiClient: widget.apiClient,
+                                    ),
+                                  ),
+                                );
+                                _loadUserData();
+                              },
+                              icon: const Icon(Icons.edit_outlined),
+                              label: const Text('Редактировать профиль'),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
 
                         SizedBox(
                           width: double.infinity,
@@ -309,7 +409,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: accentPurple,
                               foregroundColor: warmWhite,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               elevation: 0,
                             ),
@@ -338,10 +440,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(fontSize: 11, color: textSecondary)),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 11, color: textSecondary),
+                ),
                 Text(
                   value,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textPrimary),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: textPrimary,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/api/api_client.dart';
@@ -9,6 +12,11 @@ import 'screens/auth_screen.dart';
 import 'screens/main_navigation_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+final Completer<void> initialDeepLinkResolved = Completer<void>();
+String? pendingResetToken;
+bool appBootstrapFinished = false;
 
 final tokenStorage = TokenStorage();
 final apiClient = ApiClient(
@@ -16,7 +24,7 @@ final apiClient = ApiClient(
   onUnauthorized: () {
     navigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AuthScreen()),
-          (route) => false,
+      (route) => false,
     );
   },
 );
@@ -32,28 +40,76 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  static const MethodChannel _deepLinkChannel = MethodChannel(
+    'soulbuddy/deep_links',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _deepLinkChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onLink' && call.arguments is String) {
+        _handleIncomingLink(Uri.tryParse(call.arguments as String));
+      }
+    });
+    _deepLinkChannel
+        .invokeMethod<String>('getInitialLink')
+        .then((link) {
+          if (link != null) _handleIncomingLink(Uri.tryParse(link));
+        })
+        .catchError((_) {})
+        .whenComplete(() {
+          if (!initialDeepLinkResolved.isCompleted) {
+            initialDeepLinkResolved.complete();
+          }
+        });
+  }
+
+  void _handleIncomingLink(Uri? uri) {
+    if (uri == null) return;
+    if (uri.host != 'reset-password' && uri.path != '/reset-password') return;
+    final token =
+        uri.queryParameters['token'] ?? uri.queryParameters['access_token'];
+    if (token == null || token.isEmpty) return;
+    if (!appBootstrapFinished) {
+      pendingResetToken = token;
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => ResetPasswordScreen(token: token)),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _deepLinkChannel.setMethodCallHandler(null);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
-      title: 'SoulBuddy',
-      theme: ThemeData(
-        primarySwatch: Colors.indigo,
-        useMaterial3: true,
-      ),
+      title: 'Oakle',
+      theme: ThemeData(primarySwatch: Colors.indigo, useMaterial3: true),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('ru', 'RU'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('ru', 'RU'), Locale('en', 'US')],
       locale: const Locale('ru', 'RU'),
       home: const BootstrapScreen(), // Изменено на стартовый роутер
     );
@@ -75,18 +131,53 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   }
 
   Future<void> _checkAuth() async {
+    await initialDeepLinkResolved.future;
+    if (!mounted) return;
+    if (pendingResetToken != null) {
+      final token = pendingResetToken!;
+      pendingResetToken = null;
+      appBootstrapFinished = true;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => ResetPasswordScreen(token: token)),
+      );
+      return;
+    }
     final hasToken = await tokenStorage.hasToken();
     if (!hasToken) {
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthScreen()));
+      if (mounted) {
+        appBootstrapFinished = true;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
+        );
+      }
       return;
     }
 
     try {
       final response = await apiClient.dio.get('/users/me');
-      final role = response.data['is_psychologist'] == true ? 'specialist' : 'client';
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MainNavigationScreen(forcedRole: role)));
+      final role = response.data['is_psychologist'] == true
+          ? 'specialist'
+          : 'client';
+      if (mounted) {
+        appBootstrapFinished = true;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                MainNavigationScreen(forcedRole: role, apiClient: apiClient),
+          ),
+        );
+      }
     } catch (e) {
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthScreen()));
+      if (mounted) {
+        appBootstrapFinished = true;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
+        );
+      }
     }
   }
 
@@ -94,9 +185,7 @@ class _BootstrapScreenState extends State<BootstrapScreen> {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: Color(0xFF1E1C2A),
-      body: Center(
-        child: CircularProgressIndicator(color: Color(0xFF7862D6)),
-      ),
+      body: Center(child: CircularProgressIndicator(color: Color(0xFF7862D6))),
     );
   }
 }

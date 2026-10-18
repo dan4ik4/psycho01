@@ -12,7 +12,7 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
-        android:label="god_save_this_shit_app"
+        android:label="Oakle"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
@@ -32,6 +32,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter android:label="Oakle password reset">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="oakle" android:host="reset-password" />
+                <data android:scheme="soulbuddy" android:host="reset-password" />
             </intent-filter>
         </activity>
 

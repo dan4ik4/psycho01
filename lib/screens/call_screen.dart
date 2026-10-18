@@ -8,11 +8,7 @@ class CallScreen extends StatefulWidget {
   final String slotId;
   final ApiClient apiClient;
 
-  const CallScreen({
-    super.key,
-    required this.slotId,
-    required this.apiClient,
-  });
+  const CallScreen({super.key, required this.slotId, required this.apiClient});
 
   @override
   State<CallScreen> createState() => _CallScreenState();
@@ -29,6 +25,7 @@ class _CallScreenState extends State<CallScreen> {
   bool _isVideoDisabled = false;
 
   RtcEngine? _engine;
+  bool _joinedBackend = false;
 
   final Color accentPurple = const Color(0xFF7862D6);
   final Color deepPurple = const Color(0xFFB0A6E8);
@@ -42,24 +39,31 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _startCallSession() async {
     try {
-      final statuses = await [Permission.microphone, Permission.camera].request();
+      final statuses = await [
+        Permission.microphone,
+        Permission.camera,
+      ].request();
       if (statuses[Permission.microphone] != PermissionStatus.granted ||
           statuses[Permission.camera] != PermissionStatus.granted) {
         if (mounted) {
           setState(() {
-            _errorMessage = "Для совершения звонка необходим доступ к камере и микрофону";
+            _errorMessage =
+                "Для совершения звонка необходим доступ к камере и микрофону";
             _isLoading = false;
           });
         }
         return;
       }
 
-      final response = await widget.apiClient.dio.post('/calls/${widget.slotId}/join');
+      final response = await widget.apiClient.dio.post(
+        '/calls/${widget.slotId}/join',
+      );
+      _joinedBackend = true;
 
-      final String fetchedAppId = response.data['appId'];
+      final String fetchedAppId = response.data['app_id'];
       final String token = response.data['token'];
       final int uid = response.data['uid'] ?? 0;
-      _channelName = response.data['channelName'];
+      _channelName = response.data['room_id'];
 
       await _initAgora(fetchedAppId, token, uid, _channelName!);
     } on ApiException catch (e) {
@@ -72,19 +76,30 @@ class _CallScreenState extends State<CallScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = "Ошибка подключения к сессии: $e";
+          _errorMessage = friendlyApiError(
+            e,
+            fallback:
+                'Не удалось подключиться к звонку. Проверьте интернет и попробуйте снова.',
+          );
           _isLoading = false;
         });
       }
     }
   }
 
-  Future<void> _initAgora(String appId, String token, int uid, String channelName) async {
+  Future<void> _initAgora(
+    String appId,
+    String token,
+    int uid,
+    String channelName,
+  ) async {
     _engine = createAgoraRtcEngine();
-    await _engine!.initialize(RtcEngineContext(
-      appId: appId,
-      channelProfile: ChannelProfileType.channelProfileCommunication,
-    ));
+    await _engine!.initialize(
+      RtcEngineContext(
+        appId: appId,
+        channelProfile: ChannelProfileType.channelProfileCommunication,
+      ),
+    );
 
     _engine!.registerEventHandler(
       RtcEngineEventHandler(
@@ -101,11 +116,16 @@ class _CallScreenState extends State<CallScreen> {
             setState(() => _remoteUid = remoteUid);
           }
         },
-        onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReasonType reason) {
-          if (mounted) {
-            setState(() => _remoteUid = null);
-          }
-        },
+        onUserOffline:
+            (
+              RtcConnection connection,
+              int remoteUid,
+              UserOfflineReasonType reason,
+            ) {
+              if (mounted) {
+                setState(() => _remoteUid = null);
+              }
+            },
         onLeaveChannel: (RtcConnection connection, RtcStats stats) {
           if (mounted) {
             setState(() {
@@ -168,11 +188,12 @@ class _CallScreenState extends State<CallScreen> {
       await _engine!.release();
     }
 
-    // Обязательное уведомление бэкенда о завершении участия
-    try {
-      await widget.apiClient.dio.post('/calls/${widget.slotId}/leave');
-    } catch (e) {
-      debugPrint('Ошибка при выходе из слота: $e');
+    if (_joinedBackend) {
+      try {
+        await widget.apiClient.dio.post('/calls/${widget.slotId}/leave');
+      } catch (e) {
+        debugPrint('Ошибка при выходе из слота: $e');
+      }
     }
   }
 
@@ -189,7 +210,10 @@ class _CallScreenState extends State<CallScreen> {
               const SizedBox(height: 20),
               Text(
                 "Подключение к защищённой сессии...",
-                style: TextStyle(color: warmWhite.withOpacity(0.8), fontSize: 14),
+                style: TextStyle(
+                  color: warmWhite.withOpacity(0.8),
+                  fontSize: 14,
+                ),
               ),
             ],
           ),
@@ -206,7 +230,11 @@ class _CallScreenState extends State<CallScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.error_outline, size: 60, color: Colors.redAccent.shade100),
+                Icon(
+                  Icons.error_outline,
+                  size: 60,
+                  color: Colors.redAccent.shade100,
+                ),
                 const SizedBox(height: 16),
                 Text(
                   _errorMessage!,
@@ -218,11 +246,22 @@ class _CallScreenState extends State<CallScreen> {
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accentPurple,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 12,
+                    ),
                   ),
-                  child: Text("Вернуться", style: TextStyle(color: warmWhite, fontWeight: FontWeight.bold)),
-                )
+                  child: Text(
+                    "Вернуться",
+                    style: TextStyle(
+                      color: warmWhite,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -236,16 +275,15 @@ class _CallScreenState extends State<CallScreen> {
         child: Stack(
           children: [
             Center(child: _buildRemoteVideo()),
-            Positioned(
-              right: 20,
-              top: 20,
-              child: _buildLocalVideoPreview(),
-            ),
+            Positioned(right: 20, top: 20, child: _buildLocalVideoPreview()),
             Positioned(
               left: 20,
               top: 20,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.4),
                   borderRadius: BorderRadius.circular(12),
@@ -257,14 +295,20 @@ class _CallScreenState extends State<CallScreen> {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: _remoteUid != null ? Colors.greenAccent : Colors.orangeAccent,
+                        color: _remoteUid != null
+                            ? Colors.greenAccent
+                            : Colors.orangeAccent,
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       _remoteUid != null ? "Консультация" : "Соединение...",
-                      style: TextStyle(color: warmWhite, fontSize: 12, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: warmWhite,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -306,7 +350,11 @@ class _CallScreenState extends State<CallScreen> {
             const SizedBox(height: 24),
             Text(
               "Ожидание подключения психолога...",
-              style: TextStyle(color: warmWhite, fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: warmWhite,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
@@ -333,7 +381,7 @@ class _CallScreenState extends State<CallScreen> {
             color: Colors.black.withOpacity(0.4),
             blurRadius: 12,
             offset: const Offset(0, 4),
-          )
+          ),
         ],
         border: Border.all(color: warmWhite.withOpacity(0.15), width: 1.5),
       ),
@@ -341,18 +389,18 @@ class _CallScreenState extends State<CallScreen> {
         borderRadius: BorderRadius.circular(16),
         child: _localUserJoined && !_isVideoDisabled && _engine != null
             ? AgoraVideoView(
-          controller: VideoViewController(
-            rtcEngine: _engine!,
-            canvas: const VideoCanvas(uid: 0),
-          ),
-        )
+                controller: VideoViewController(
+                  rtcEngine: _engine!,
+                  canvas: const VideoCanvas(uid: 0),
+                ),
+              )
             : Center(
-          child: Icon(
-            _isVideoDisabled ? Icons.videocam_off : Icons.person,
-            color: warmWhite.withOpacity(0.4),
-            size: 32,
-          ),
-        ),
+                child: Icon(
+                  _isVideoDisabled ? Icons.videocam_off : Icons.person,
+                  color: warmWhite.withOpacity(0.4),
+                  size: 32,
+                ),
+              ),
       ),
     );
   }
@@ -370,7 +418,7 @@ class _CallScreenState extends State<CallScreen> {
             color: Colors.black.withOpacity(0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
-          )
+          ),
         ],
       ),
       child: Row(
@@ -382,7 +430,9 @@ class _CallScreenState extends State<CallScreen> {
             onPressed: _onToggleMute,
           ),
           _buildActionButton(
-            icon: _isVideoDisabled ? Icons.videocam_off : Icons.videocam,
+            icon: _isVideoDisabled
+                ? Icons.videocam_off_rounded
+                : Icons.videocam_rounded,
             isActive: !_isVideoDisabled,
             onPressed: _onToggleVideo,
           ),
@@ -409,7 +459,9 @@ class _CallScreenState extends State<CallScreen> {
   }) {
     Color buttonBg = isEndCall
         ? Colors.redAccent
-        : (isActive ? warmWhite.withOpacity(0.15) : Colors.redAccent.withOpacity(0.2));
+        : (isActive
+              ? warmWhite.withOpacity(0.15)
+              : Colors.redAccent.withOpacity(0.2));
 
     Color iconColor = isEndCall
         ? Colors.white
@@ -421,10 +473,7 @@ class _CallScreenState extends State<CallScreen> {
       child: Container(
         width: 48,
         height: 48,
-        decoration: BoxDecoration(
-          color: buttonBg,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: buttonBg, shape: BoxShape.circle),
         child: Icon(icon, color: iconColor, size: 22),
       ),
     );

@@ -9,28 +9,25 @@ class ProfileRepository {
   ProfileRepository({
     required ApiClient apiClient,
     required TokenStorage tokenStorage,
-  })  : _apiClient = apiClient,
-        _tokenStorage = tokenStorage;
+  }) : _apiClient = apiClient,
+       _tokenStorage = tokenStorage;
 
   Future<Map<String, dynamic>> fetchUserProfile() async {
-    try {
-      // Исправлено: обращаемся к .dio.get()
-      final response = await _apiClient.dio.get('/users/me');
-      if (response.data != null) {
-        return {
-          'full_name': response.data['full_name'] ?? response.data['fio'] ?? 'Анна Смирнова',
-          'email': response.data['email'] ?? 'anna.smirnova@example.com',
-          'psychologist_name': response.data['psychologist_name'] ?? 'Др. Елена Воронова',
-        };
-      }
-    } catch (_) {}
+    final response = await _apiClient.dio.get('/users/me');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
 
-    // Исправлено: удален вызов несуществующего метода getUserEmail()
-    return {
-      'full_name': 'Анна Смирнова',
-      'email': 'anna.smirnova@example.com',
-      'psychologist_name': 'Др. Елена Воронова',
-    };
+  Future<Map<String, dynamic>> fetchPsychologistProfile() async {
+    final response = await _apiClient.dio.get('/psychologists/me');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<void> updateUserProfile(Map<String, dynamic> data) async {
+    await _apiClient.dio.patch('/users/me', data: data);
+  }
+
+  Future<void> updatePsychologistProfile(Map<String, dynamic> data) async {
+    await _apiClient.dio.patch('/psychologists/me', data: data);
   }
 
   Future<void> logout() async {

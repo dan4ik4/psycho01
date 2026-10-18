@@ -21,6 +21,22 @@ class ApiException implements Exception {
   bool get isConflict => statusCode == 409;
   bool get isRateLimited => statusCode == 429;
 
+  String get userMessage => switch (statusCode) {
+    400 => 'Не удалось выполнить запрос. Проверьте введённые данные.',
+    401 => 'Сессия завершилась. Войдите в приложение снова.',
+    403 => 'У этой учётной записи пока нет доступа. Проверьте роль аккаунта.',
+    404 => 'Не удалось найти нужные данные. Обновите экран.',
+    409 => 'Данные изменились. Обновите экран и попробуйте ещё раз.',
+    422 => 'Проверьте введённые данные и выбранное время.',
+    429 => 'Слишком много запросов. Подождите немного и попробуйте снова.',
+    500 || 502 || 503 => 'Сервис временно недоступен. Попробуйте позже.',
+    _ when kind == ApiFailureKind.network =>
+      'Нет соединения с сервером. Проверьте интернет.',
+    _ when kind == ApiFailureKind.timeout =>
+      'Сервер долго не отвечает. Попробуйте ещё раз.',
+    _ => 'Не удалось выполнить действие. Попробуйте ещё раз.',
+  };
+
   factory ApiException.fromDio(DioException error) {
     switch (error.type) {
       case DioExceptionType.connectionTimeout:
@@ -84,12 +100,15 @@ class ApiException implements Exception {
               ? loc.where((e) => e != 'body').map((e) => '$e').join('.')
               : 'request';
           final text = item['msg']?.toString() ?? 'Invalid value';
-          fields.putIfAbsent(path.isEmpty ? 'request' : path, () => []).add(text);
+          fields
+              .putIfAbsent(path.isEmpty ? 'request' : path, () => [])
+              .add(text);
         }
         message = fields.values.expand((e) => e).join('; ');
       } else if (detail is Map) {
         final detailMap = Map<String, dynamic>.from(detail);
-        message = detailMap['reason']?.toString() ?? detailMap['code']?.toString();
+        message =
+            detailMap['reason']?.toString() ?? detailMap['code']?.toString();
       }
       message ??= map['error']?.toString();
     } else if (data is String && data.trim().isNotEmpty) {
@@ -109,6 +128,18 @@ class ApiException implements Exception {
       _ => 'Ошибка запроса',
     };
 
+    // Never display raw server details (or Dio diagnostics) directly to users.
+    if (status == 400 ||
+        status == 401 ||
+        status == 403 ||
+        status == 404 ||
+        status == 409 ||
+        status == 422 ||
+        status == 429 ||
+        (status != null && status >= 500)) {
+      message = fallback;
+    }
+
     return ApiException(
       kind: ApiFailureKind.http,
       statusCode: status,
@@ -119,7 +150,16 @@ class ApiException implements Exception {
   }
 
   @override
-  String toString() => 'ApiException($statusCode, $message)';
+  String toString() => userMessage;
+}
+
+String friendlyApiError(
+  Object error, {
+  String fallback = 'Не удалось выполнить действие. Попробуйте ещё раз.',
+}) {
+  if (error is ApiException) return error.userMessage;
+  if (error is DioException) return ApiException.fromDio(error).userMessage;
+  return fallback;
 }
 
 Future<T> apiGuard<T>(Future<T> Function() action) async {

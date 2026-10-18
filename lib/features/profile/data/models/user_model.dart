@@ -15,8 +15,10 @@ class UserModel {
     return UserModel(
       id: json['id']?.toString() ?? '',
       email: json['email'] ?? '',
-      fullName: json['full_name'] ?? json['fio'] ?? 'Пользователь',
-      role: json['role'] ?? 'client',
+      fullName: [json['first_name'], json['last_name']]
+          .where((value) => value != null && value.toString().trim().isNotEmpty)
+          .join(' '),
+      role: json['is_psychologist'] == true ? 'specialist' : 'client',
     );
   }
 }

@@ -10,15 +10,15 @@ class AuthRepository {
   AuthRepository({
     required ApiClient apiClient,
     required TokenStorage tokenStorage,
-  })  : _apiClient = apiClient,
-        _tokenStorage = tokenStorage;
+  }) : _apiClient = apiClient,
+       _tokenStorage = tokenStorage;
 
   Future<void> preRegister(String email, String password) async {
     try {
-      await _apiClient.dio.post('/auth/preregister', data: {
-        'email': email,
-        'password': password,
-      });
+      await _apiClient.dio.post(
+        '/auth/preregister',
+        data: {'email': email, 'password': password},
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -27,28 +27,29 @@ class AuthRepository {
   Future<void> verifySignUpOtp(String email, String code) async {
     try {
       // Исправлен эндпоинт и удалено сохранение токена (возвращается 204 No Content)
-      await _apiClient.dio.post('/auth/confirm', data: {
-        'email': email,
-        'code': code,
-      });
+      await _apiClient.dio.post(
+        '/auth/confirm',
+        data: {'email': email, 'otp_code': code},
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
   }
 
   Future<void> completeProfile({
-    required String fullName,
-    required String gender,
-    required int age,
-    required String role,
+    required String firstName,
+    required String lastName,
+    required DateTime birthDate,
   }) async {
     try {
-      await _apiClient.dio.post('/auth/complete-profile', data: {
-        'full_name': fullName,
-        'gender': gender,
-        'age': age,
-        'role': role,
-      });
+      await _apiClient.dio.patch(
+        '/users/me',
+        data: {
+          'first_name': firstName,
+          'last_name': lastName,
+          'birth_date': birthDate.toIso8601String().split('T').first,
+        },
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -59,18 +60,16 @@ class AuthRepository {
       // Исправлен эндпоинт и формат данных (FastAPI OAuth2PasswordRequestForm)
       final response = await _apiClient.dio.post(
         '/auth/jwt/login',
-        data: FormData.fromMap({
-          'username': email,
-          'password': password,
-        }),
+        data: {'username': email, 'password': password},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
       final token = response.data?['access_token'];
       if (token != null) {
         await _tokenStorage.saveToken(token);
       }
-
-      return response.data?['role'] ?? 'client';
+      final user = await _apiClient.dio.get('/users/me');
+      return user.data?['is_psychologist'] == true ? 'specialist' : 'client';
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -78,34 +77,21 @@ class AuthRepository {
 
   Future<void> sendPasswordReset(String email) async {
     try {
-      await _apiClient.dio.post('/auth/forgot-password', data: {
-        'email': email,
-      });
+      await _apiClient.dio.post(
+        '/auth/forgot-password',
+        data: {'email': email},
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
   }
 
-  Future<void> verifyResetOtp(String email, String code) async {
+  Future<void> updatePassword(String token, String password) async {
     try {
-      final response = await _apiClient.dio.post('/auth/verify-reset-otp', data: {
-        'email': email,
-        'code': code,
-      });
-      final token = response.data?['access_token'];
-      if (token != null) {
-        await _tokenStorage.saveToken(token);
-      }
-    } on DioException catch (e) {
-      throw ApiException.fromDio(e);
-    }
-  }
-
-  Future<void> updatePassword(String password) async {
-    try {
-      await _apiClient.dio.post('/auth/reset-password', data: {
-        'password': password,
-      });
+      await _apiClient.dio.post(
+        '/auth/reset-password',
+        data: {'token': token, 'password': password},
+      );
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
