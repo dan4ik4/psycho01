@@ -1,8 +1,11 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, Field, field_validator
+
 from app.models.slot_event import SlotEventType
+from app.schemas.user import PatientSummary
 
 
 class SlotCreate(BaseModel):
@@ -38,6 +41,7 @@ class SlotOut(BaseModel):
         "from_attributes": True,
     }
 
+
 class SlotAction(BaseModel):
     comment: str | None = Field(
         default=None,
@@ -56,7 +60,8 @@ class SlotAction(BaseModel):
         normalized_comment = value.strip()
 
         return normalized_comment or None
-    
+
+
 class SlotEventOut(BaseModel):
     id: uuid.UUID
     event_type: SlotEventType
@@ -68,13 +73,17 @@ class SlotEventOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class SlotWithLatestEventOut(BaseModel):
     id: uuid.UUID
     psychologist_id: uuid.UUID
     start_at: datetime
     end_at: datetime
     latest_event: SlotEventOut | None
+    status: Literal[
+        "free", "reserved", "booked", "completed", "missed", "cancelled", "removed"
+    ]
+    patient: PatientSummary | None = None
 
     class Config:
         from_attributes = True
-

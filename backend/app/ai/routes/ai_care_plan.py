@@ -1,30 +1,30 @@
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.schemas.ai_care_plan import (
+    AiCarePlanActivate,
     AiCarePlanCreate,
+    AiCarePlanEventRead,
+    AiCarePlanPatientRead,
+    AiCarePlanPsychologistRead,
+    AiCarePlanStateChange,
     AiCarePlanVersionCreate,
     AiCarePlanVersionRead,
-    AiCarePlanActivate,
-    AiCarePlanStateChange,
-    AiCarePlanEventRead,
-    AiCarePlanPsychologistRead,
-    AiCarePlanPatientRead,
 )
 from app.ai.services.ai_care_plan import (
+    activate_care_plan_version,
+    complete_care_plan,
     create_care_plan,
     create_new_care_plan_version,
-    activate_care_plan_version,
-    pause_care_plan,
-    complete_care_plan,
-    get_psychologist_care_plan,
     get_patient_care_plan,
+    get_psychologist_care_plan,
+    pause_care_plan,
 )
 from app.auth.deps import current_active_user
 from app.db.deps import get_db
 from app.models.user import User
-
 
 router = APIRouter(
     prefix="/care-plans",
@@ -61,7 +61,8 @@ async def create_care_plan_endpoint(
         latest_version=version,
         latest_event=None,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/versions",
     response_model=AiCarePlanVersionRead,
@@ -86,7 +87,8 @@ async def create_care_plan_version_endpoint(
         instructions_for_ai=data.instructions_for_ai,
         patient_recommendations=data.patient_recommendations,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/activate",
     response_model=AiCarePlanEventRead,
@@ -110,7 +112,8 @@ async def activate_care_plan_version_endpoint(
         version_id=data.version_id,
         comment=data.comment,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/pause",
     response_model=AiCarePlanEventRead,
@@ -133,7 +136,8 @@ async def pause_care_plan_endpoint(
         psychologist_id=user.id,
         comment=data.comment,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/complete",
     response_model=AiCarePlanEventRead,
@@ -156,7 +160,8 @@ async def complete_care_plan_endpoint(
         psychologist_id=user.id,
         comment=data.comment,
     )
-    
+
+
 @router.get(
     "/{assignment_id}/psychologist",
     response_model=AiCarePlanPsychologistRead,
@@ -172,12 +177,10 @@ async def get_psychologist_care_plan_endpoint(
             detail="Only psychologists can access this care plan",
         )
 
-    care_plan, latest_version, latest_event = (
-        await get_psychologist_care_plan(
-            db=db,
-            assignment_id=assignment_id,
-            psychologist_id=user.id,
-        )
+    care_plan, latest_version, latest_event = await get_psychologist_care_plan(
+        db=db,
+        assignment_id=assignment_id,
+        psychologist_id=user.id,
     )
 
     return AiCarePlanPsychologistRead(
@@ -185,10 +188,12 @@ async def get_psychologist_care_plan_endpoint(
         latest_version=latest_version,
         latest_event=latest_event,
     )
-    
+
+
 @router.get(
     "/{assignment_id}/patient",
     response_model=AiCarePlanPatientRead,
+    description="Patient reads own activated recommendations without a subscription. AI instructions are never returned. Draft, paused or completed plan: 409. Guided AI still requires a subscription.",
 )
 async def get_patient_care_plan_endpoint(
     assignment_id: uuid.UUID,
@@ -213,4 +218,3 @@ async def get_patient_care_plan_endpoint(
         patient_recommendations=version.patient_recommendations,
         event_type=latest_event.event_type,
     )
-    

@@ -10,18 +10,23 @@ from pathlib import Path
 import pytest_asyncio
 from sqlalchemy import text
 
-if any(os.environ.get(flag, "").lower() != "true" for flag in (
-    "EMAIL_TEST_MODE", "AI_TEST_MODE", "BILLING_TEST_MODE", "AGORA_TEST_MODE"
-)) or os.environ.get(
-    "DB_HOST"
-) not in ("127.0.0.1", "localhost"):
+if any(
+    os.environ.get(flag, "").lower() != "true"
+    for flag in (
+        "EMAIL_TEST_MODE",
+        "AI_TEST_MODE",
+        "BILLING_TEST_MODE",
+        "AGORA_TEST_MODE",
+    )
+) or os.environ.get("DB_HOST") not in ("127.0.0.1", "localhost"):
     raise RuntimeError(
         "Run tests with python scripts/run_tests.py (disposable database)"
     )
 test_name = os.environ.get("PSYCHO_TEST_DATABASE", "")
-if not re.fullmatch(r"psycho01_test_[0-9a-f]{12}", test_name) or os.environ.get(
-    "DB_NAME"
-) != test_name:
+if (
+    not re.fullmatch(r"psycho01_test_[0-9a-f]{12}", test_name)
+    or os.environ.get("DB_NAME") != test_name
+):
     raise RuntimeError("Tests require a disposable database created by run_tests.py")
 os.environ["SCHEDULER_ENABLED"] = "false"
 subprocess.run(
@@ -107,7 +112,7 @@ async def domain():
                     performed_by_id=psychologist.id,
                 ),
                 PsychologistBilling(
-                    user_id=psychologist.id, hourly_net_minor=300000, currency="RUB"
+                    user_id=psychologist.id, hourly_net_minor=300000, currency="USD"
                 ),
             ]
         )

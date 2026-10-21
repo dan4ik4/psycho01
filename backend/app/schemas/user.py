@@ -5,11 +5,20 @@ from fastapi_users import schemas
 from pydantic import BaseModel, EmailStr, Field
 
 
+class PatientSummary(BaseModel):
+    id: uuid.UUID
+    first_name: str | None = None
+    last_name: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class UserRead(schemas.BaseUser[uuid.UUID]):
     first_name: str | None = None
     last_name: str | None = None
     birth_date: date | None = None
 
+    avatar_url: str | None = None
     is_psychologist: bool = False
 
     specialization: str | None = None

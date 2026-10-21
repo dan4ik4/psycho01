@@ -95,7 +95,26 @@ class RequestKey(BaseModel):
 
 
 class RateIn(BaseModel):
-    hourly_net_minor: int = Field(gt=0, le=100_000_000)
+    hourly_net_minor: int = Field(
+        gt=0,
+        le=100_000_000,
+        description="Net hourly rate in USD cents. Example: 10000 = $100 net/hour; client total includes fees.",
+    )
+
+
+class RateOut(BaseModel):
+    hourly_net_minor: int | None = Field(
+        description="Net hourly rate in cents; null means the psychologist must set a rate."
+    )
+    currency: str = Field(description="ISO 4217 currency; new rates use USD.")
+    test_mode: bool
+    connected: bool
+
+
+class OnboardingOut(BaseModel):
+    test_mode: bool
+    connected: bool
+    url: str | None
 
 
 class MockResult(BaseModel):
@@ -164,7 +183,7 @@ async def expire_mock(
     return await access_summary(db, user.id)
 
 
-@router.get("/psychologist/me")
+@router.get("/psychologist/me", response_model=RateOut)
 async def profile(
     db: AsyncSession = Depends(get_db), user: User = Depends(require_psychologist)
 ):
@@ -178,7 +197,11 @@ async def profile(
     )
 
 
-@router.patch("/psychologist/me")
+@router.patch(
+    "/psychologist/me",
+    response_model=RateOut,
+    description="Psychologist only. Set a net hourly rate in USD cents. Onboarding is not required to save the rate.",
+)
 async def set_rate(
     data: RateIn,
     db: AsyncSession = Depends(get_db),
@@ -205,7 +228,11 @@ async def set_rate(
     return await profile(db, user)
 
 
-@router.post("/psychologist/onboarding")
+@router.post(
+    "/psychologist/onboarding",
+    response_model=OnboardingOut,
+    description="No body. Not required to save a rate. Test mode returns connected=true. Live mode: set a rate first, then follow the returned Stripe onboarding URL.",
+)
 async def onboarding(
     db: AsyncSession = Depends(get_db), user: User = Depends(require_psychologist)
 ):
@@ -213,7 +240,7 @@ async def onboarding(
         return {"test_mode": True, "connected": True, "url": None}
     await lock_account(db, user.id)
     result = await db.get(PsychologistBilling, user.id)
-    if not result:
+    if not result or result.hourly_net_minor is None:
         raise ConflictError("Set your hourly rate first")
     provider = StripeConnectProvider()
     if not result.stripe_account_id:
@@ -250,6 +277,7 @@ async def onboarding(
         },
     )
     return {
+        "test_mode": False,
         "url": link["url"],
         "connected": result.charges_enabled and result.payouts_enabled,
     }
@@ -262,11 +290,18 @@ async def policy(
     user: User = Depends(require_superuser),
 ):
     record = PricingPolicy(
-        **data.model_dump(), test_mode=settings.BILLING_TEST_MODE, created_by_id=user.id
+        **data.model_dump(),
+        test_mode=settings.BILLING_TEST_MODE,
+        created_by_id=user.id,
+        currency=settings.BILLING_CURRENCY,
     )
     db.add(record)
     await db.commit()
-    return {"id": record.id, "test_mode": settings.BILLING_TEST_MODE, **data.model_dump()}
+    return {
+        "id": record.id,
+        "test_mode": settings.BILLING_TEST_MODE,
+        **data.model_dump(),
+    }
 
 
 @router.get("/slots/{slot_id}/quote")

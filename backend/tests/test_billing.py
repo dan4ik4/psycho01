@@ -1,10 +1,8 @@
 import asyncio
 import uuid
-from datetime import timedelta
+from datetime import UTC, timedelta
 
 import pytest
-from sqlalchemy import func, select
-
 from app.ai.models.conversation import AiConversationMode
 from app.ai.providers.chat import AiProviderError
 from app.ai.services.conversation import (
@@ -37,6 +35,7 @@ from app.services.call import join_call
 from app.services.lesson_finalization_service import resolve_expired_lesson_outcomes
 from app.services.patient_assignment import finish_assignment
 from app.services.slot import cancel_slot_booking, get_available_slots
+from sqlalchemy import func, select
 
 
 async def booked(domain):
@@ -51,7 +50,7 @@ async def booked(domain):
             payment.id,
             external_id=f"mock_{payment.id}",
             amount_minor=payment.amount_minor,
-            currency="RUB",
+            currency="USD",
         )
         await db.commit()
         return booking.id, payment.id
@@ -89,7 +88,7 @@ async def end_session(booking_id, patient_here, psy_here):
 
 
 def test_gross_price_preserves_net():
-    quote = calculate_quote(300000, 1800, "RUB", (1000, 1500, 290, 30))
+    quote = calculate_quote(300000, 1800, "USD", (1000, 1500, 290, 30))
     assert quote["net_minor"] == 150000
     assert (
         quote["amount_minor"]
@@ -167,7 +166,7 @@ async def test_idempotent_reserve_and_confirmation(domain):
                 pay.id,
                 external_id="mock_id",
                 amount_minor=pay.amount_minor,
-                currency="RUB",
+                currency="USD",
             )
             await db.commit()
         assert (
@@ -214,7 +213,7 @@ async def test_late_payment_refunds_without_stealing_slot(domain):
             payment.id,
             external_id="late",
             amount_minor=payment.amount_minor,
-            currency="RUB",
+            currency="USD",
         )
         await db.commit()
         assert (await db.get(Booking, new.id)).status == "pending"
@@ -248,7 +247,7 @@ async def test_price_mismatch_does_not_confirm(domain):
         )
         with pytest.raises(BillingError):
             await confirm_payment(
-                db, payment.id, external_id="wrong", amount_minor=1, currency="RUB"
+                db, payment.id, external_id="wrong", amount_minor=1, currency="USD"
             )
 
 
@@ -312,8 +311,10 @@ async def test_guided_and_care_plan_access(domain):
             db, assignment.id, psy.id, "Private instructions", "Patient recommendation"
         )
         await activate_care_plan_version(db, assignment.id, psy.id, version.id)
-        with pytest.raises(BillingError):
-            await get_patient_care_plan(db, assignment.id, patient.id)
+        _, visible_version, _ = await get_patient_care_plan(
+            db, assignment.id, patient.id
+        )
+        assert visible_version.patient_recommendations == "Patient recommendation"
         with pytest.raises(BillingError):
             await create_conversation(db, patient, "Guided", AiConversationMode.GUIDED)
         await mock_purchase(db, patient.id, uuid.uuid4())
@@ -375,13 +376,13 @@ async def test_provider_failure_retries_without_losing_operation(domain, monkeyp
 
 
 def test_daily_period_switches_at_moscow_midnight(monkeypatch):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.billing.access import usage_period
 
     monkeypatch.setattr(
         "app.billing.access.now",
-        lambda: datetime(2026, 9, 18, 20, 59, tzinfo=timezone.utc),
+        lambda: datetime(2026, 9, 18, 20, 59, tzinfo=UTC),
     )
     day, reset = usage_period()
     assert day.isoformat() == "2026-09-18" and reset.hour == 21
@@ -394,5 +395,5 @@ def test_daily_period_switches_at_moscow_midnight(monkeypatch):
 
 def test_tiny_rate_cannot_create_zero_payment():
     with pytest.raises(BillingError) as error:
-        calculate_quote(1, 900, "RUB", (0, 0, 0, 0))
+        calculate_quote(1, 900, "USD", (0, 0, 0, 0))
     assert error.value.code == "invalid_price"

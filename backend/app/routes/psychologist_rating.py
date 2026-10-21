@@ -6,13 +6,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import current_active_user
 from app.db.deps import get_db
 from app.models.user import User
-from app.schemas.psychologist_rating import PsychologistRatingOut, PsychologistRatingUpsert, PsychologistRatingSummary
-from app.services.psychologist_rating import rate_psychologist_service, get_psychologist_rating_summary_service
+from app.schemas.psychologist_rating import (
+    PsychologistRatingOut,
+    PsychologistRatingSummary,
+    PsychologistRatingUpsert,
+)
+from app.services.psychologist_rating import (
+    get_psychologist_rating_summary_service,
+    rate_psychologist_service,
+)
 
 router = APIRouter(prefix="/psychologists_rating", tags=["psychologists_rating"])
 
 
-@router.put("/{psychologist_id}/rating", response_model=PsychologistRatingOut)
+@router.put(
+    "/{psychologist_id}/rating",
+    response_model=PsychologistRatingOut,
+    description="Patient only, after at least one completed session with this psychologist. Rating: 1–5. Replaces your previous rating.",
+    responses={
+        403: {
+            "description": "Psychologist account or no completed session with this psychologist",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You can rate this psychologist only after a completed session"
+                    }
+                }
+            },
+        }
+    },
+)
 async def rate_psychologist(
     psychologist_id: uuid.UUID,
     data: PsychologistRatingUpsert,
@@ -27,7 +50,10 @@ async def rate_psychologist(
         comment=data.comment,
     )
 
-@router.get("/{psychologist_id}/rating-summary", response_model=PsychologistRatingSummary)
+
+@router.get(
+    "/{psychologist_id}/rating-summary", response_model=PsychologistRatingSummary
+)
 async def get_rating_summary(
     psychologist_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),

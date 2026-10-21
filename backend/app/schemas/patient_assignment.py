@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime
-
 from typing import Annotated
 
 from pydantic import BaseModel, StringConstraints
 
+from app.schemas.user import PatientSummary
 
 AssignmentRequestComment = Annotated[
     str,
@@ -60,11 +60,13 @@ class PatientAssignmentEventOut(BaseModel):
         "from_attributes": True,
     }
 
+
 class PatientAssignmentWithLatestEventOut(BaseModel):
     id: uuid.UUID
     patient_id: uuid.UUID
     psychologist_id: uuid.UUID
     latest_event: PatientAssignmentEventOut
+    patient: PatientSummary | None = None
 
     model_config = {
         "from_attributes": True,

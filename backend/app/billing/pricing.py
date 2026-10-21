@@ -21,7 +21,9 @@ def calculate_quote(hourly_net_minor, seconds, currency, rates):
         )
     )
     if net < 1:
-        raise BillingError("invalid_price", "Session price must be at least one kopek")
+        raise BillingError(
+            "invalid_price", "Session price must be at least one minor currency unit"
+        )
     gross = int(
         (
             Decimal(net + fixed) * 10000 / (10000 - tax - platform - processor)
@@ -62,13 +64,13 @@ def calculate_quote(hourly_net_minor, seconds, currency, rates):
     )
 
 
-async def quote_slot(db, slot):
-    profile = await db.get(PsychologistBilling, slot.psychologist_id)
-    if not profile:
-        raise BillingError("rate_not_set", "Psychologist must set an hourly rate")
+async def pricing_rates(db, currency):
     policy = await db.scalar(
         select(PricingPolicy)
-        .where(PricingPolicy.test_mode == settings.BILLING_TEST_MODE)
+        .where(
+            PricingPolicy.test_mode == settings.BILLING_TEST_MODE,
+            PricingPolicy.currency == currency,
+        )
         .order_by(PricingPolicy.created_at.desc(), PricingPolicy.id.desc())
         .limit(1)
     )
@@ -94,15 +96,21 @@ async def quote_slot(db, slot):
                 "Live tax and fee settings must be explicitly configured",
                 status_code=503,
             )
+    return rates, str(policy.id) if policy else (
+        "mock-zero-rates" if settings.BILLING_TEST_MODE else "server-settings"
+    )
+
+
+async def quote_slot(db, slot):
+    profile = await db.get(PsychologistBilling, slot.psychologist_id)
+    if not profile or profile.hourly_net_minor is None:
+        raise BillingError("rate_not_set", "Psychologist must set an hourly rate")
+    rates, policy_id = await pricing_rates(db, profile.currency)
     quote = calculate_quote(
         profile.hourly_net_minor,
         (slot.end_at - slot.start_at).total_seconds(),
         profile.currency,
         rates,
     )
-    quote["policy_id"] = (
-        str(policy.id)
-        if policy
-        else ("mock-zero-rates" if settings.BILLING_TEST_MODE else "server-settings")
-    )
+    quote["policy_id"] = policy_id
     return quote

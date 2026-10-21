@@ -7,8 +7,6 @@ from datetime import timedelta
 
 import httpx
 import pytest
-from sqlalchemy import func, select
-
 from app.billing.access import paid_access
 from app.billing.errors import BillingError
 from app.billing.jobs import process_events
@@ -18,6 +16,7 @@ from app.billing.subscription import sync_subscription
 from app.core.settings import settings
 from app.db.session import AsyncSessionLocal
 from app.main import app
+from sqlalchemy import func, select
 
 
 def signature(body, timestamp=None):
@@ -214,7 +213,7 @@ async def test_lost_checkout_response_recovers_after_reservation_expired(
                 "id": "pi_recovered",
                 "status": "succeeded",
                 "amount_received": payment.amount_minor,
-                "currency": "rub",
+                "currency": "usd",
                 "latest_charge": "ch_recovered",
             }
 

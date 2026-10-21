@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import resend
 
@@ -18,4 +19,8 @@ async def send_email(to: str, subject: str, text: str) -> None:
         "text": text,
     }
 
-    await asyncio.to_thread(resend.Emails.send, params)
+    result = await asyncio.to_thread(resend.Emails.send, params)
+    if isinstance(result, dict) and result.get("id"):
+        logging.getLogger("uvicorn.error").info(
+            "Email accepted by Resend: message_id=%s", result["id"]
+        )

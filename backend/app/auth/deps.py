@@ -1,17 +1,23 @@
 import uuid
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from fastapi import Depends, HTTPException, status
 from fastapi_users import FastAPIUsers, exceptions
-from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
-from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+from fastapi_users.authentication import (
+    AuthenticationBackend,
+    BearerTransport,
+    JWTStrategy,
+)
 from fastapi_users.jwt import SecretType
 from fastapi_users.manager import BaseUserManager, UUIDIDMixin
+from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
-from fastapi import HTTPException, status, Depends
 
+from app.core.mailer import send_email
 from app.core.settings import settings
 from app.db.deps import get_db
 from app.models.user import User
-from app.core.mailer import send_email
 
 
 # -------- user db --------
@@ -26,11 +32,16 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_register(self, user: User, request: Request | None = None):
         return
-    
+
     async def on_after_forgot_password(
         self, user: User, token: str, request: Request | None = None
     ):
-        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        parts = urlsplit(settings.PASSWORD_RESET_URL)
+        query = [(k, v) for k, v in parse_qsl(parts.query) if k != "token"]
+        query.append(("token", token))
+        reset_link = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(query), "")
+        )
 
         await send_email(
             to=user.email,
@@ -41,7 +52,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 "Если вы не запрашивали сброс — просто проигнорируйте письмо."
             ),
         )
-    
+
     async def validate_password(
         self,
         password: str,
@@ -55,8 +66,6 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
 async def get_user_manager(user_db=Depends(get_user_db)):
     yield UserManager(user_db)
-
-
 
 
 # -------- auth backend --------
@@ -82,6 +91,7 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](
 
 current_active_user = fastapi_users.current_user(active=True)
 
+
 def require_psychologist(user: User = Depends(current_active_user)) -> User:
     if not user.is_psychologist:
         raise HTTPException(
@@ -89,6 +99,7 @@ def require_psychologist(user: User = Depends(current_active_user)) -> User:
             detail="Only psychologists can access this endpoint",
         )
     return user
+
 
 def require_superuser(
     user: User = Depends(current_active_user),

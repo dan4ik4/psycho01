@@ -8,18 +8,16 @@ from fastapi import (
     Request,
     status,
 )
-from pydantic import EmailStr
-
 from fastapi_users import exceptions
 from fastapi_users.manager import BaseUserManager
 from fastapi_users.router.common import ErrorCode, ErrorModel
+from pydantic import EmailStr
 
 from app.auth.deps import get_user_manager
 from app.core.email import normalize_email
 from app.core.rate_limiter import limiter
 from app.core.settings import settings
 from app.models.user import User
-
 
 router = APIRouter(
     prefix="/auth",
@@ -42,12 +40,8 @@ reset_password_responses = {
                         "summary": "Password validation failed",
                         "value": {
                             "detail": {
-                                "code": (
-                                    ErrorCode.RESET_PASSWORD_INVALID_PASSWORD
-                                ),
-                                "reason": (
-                                    "Password should be at least 8 characters"
-                                ),
+                                "code": (ErrorCode.RESET_PASSWORD_INVALID_PASSWORD),
+                                "reason": ("Password should be at least 8 characters"),
                             },
                         },
                     },
@@ -79,6 +73,7 @@ def get_forgot_password_email_key(
     "/forgot-password",
     status_code=status.HTTP_202_ACCEPTED,
     name="reset:forgot_password",
+    description="Accepts email. Sends an oakle://reset-password?token=... link for an active account. Returns 202 even for an unknown email. Token lifetime: 1 hour.",
 )
 @limiter.limit(
     settings.AUTH_FORGOT_PASSWORD_IP_RATE_LIMIT,
@@ -99,7 +94,7 @@ async def forgot_password(
     try:
         user = await user_manager.get_by_email(email)
     except exceptions.UserNotExists:
-        return None
+        return
 
     try:
         await user_manager.forgot_password(
@@ -109,12 +104,13 @@ async def forgot_password(
     except exceptions.UserInactive:
         pass
 
-    return None
+    return
 
 
 @router.post(
     "/reset-password",
     name="reset:reset_password",
+    description="Accepts token and password (minimum 8 characters). Successful reset invalidates this token. Invalid/expired token: 400 RESET_PASSWORD_BAD_TOKEN.",
     responses=reset_password_responses,
 )
 async def reset_password(

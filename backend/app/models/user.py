@@ -10,6 +10,16 @@ from app.db.base import Base
 class User(SQLAlchemyBaseUserTableUUID, Base):
     __tablename__ = "users"
 
+    avatar_filename: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    @property
+    def avatar_url(self) -> str | None:
+        from app.core.settings import settings
+
+        if not self.avatar_filename:
+            return None
+        return f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/psychologists/photos/{self.avatar_filename}"
+
     first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -37,6 +47,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         server_default="0",
         nullable=False,
     )
+
 
 Index(
     "ux_users_email_lower",

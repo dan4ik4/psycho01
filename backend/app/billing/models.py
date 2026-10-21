@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -21,7 +21,7 @@ from app.db.base import Base
 
 
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Subscription(Base):
@@ -75,7 +75,7 @@ class PsychologistBilling(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True
     )
-    hourly_net_minor: Mapped[int] = mapped_column(BigInteger)
+    hourly_net_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     currency: Mapped[str] = mapped_column(String(3))
     stripe_account_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     charges_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -94,6 +94,7 @@ class PricingPolicy(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     test_mode: Mapped[bool] = mapped_column(Boolean)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
     tax_bps: Mapped[int] = mapped_column(Integer)
     platform_bps: Mapped[int] = mapped_column(Integer)
     processor_bps: Mapped[int] = mapped_column(Integer)

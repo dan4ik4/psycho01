@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
-from app.db.deps import get_db
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.deps import current_active_user
+from app.crud.patient_assignment import (
+    get_active_assignments,
+    get_finished_assignments,
+    get_incoming_assignment_requests,
+    get_latest_patient_assignment,
+)
+from app.db.deps import get_db
 from app.models.user import User
 from app.schemas.patient_assignment import (
     PatientAssignmentFinish,
@@ -14,34 +21,18 @@ from app.schemas.patient_assignment import (
 )
 from app.services.patient_assignment import (
     accept_assignment,
-    request_assignment,
-    reject_assignment,
-    finish_assignment,
     cancel_assignment,
+    finish_assignment,
+    reject_assignment,
+    request_assignment,
 )
-from app.crud.patient_assignment import (
-    get_latest_patient_assignment,
-    get_incoming_assignment_requests,
-    get_active_assignments,
-    get_finished_assignments,
-
-)
+from app.services.presentation import assignment_views
 
 router = APIRouter(
     prefix="/patient-assignments",
     tags=["Patient assignments"],
 )
 
-def build_assignment_with_event_response(
-    assignment,
-    latest_event,
-) -> PatientAssignmentWithLatestEventOut:
-    return PatientAssignmentWithLatestEventOut(
-        id=assignment.id,
-        patient_id=assignment.patient_id,
-        psychologist_id=assignment.psychologist_id,
-        latest_event=latest_event,
-    )
 
 @router.post(
     "/request",
@@ -65,7 +56,8 @@ async def request_assignment_endpoint(
         psychologist_id=data.psychologist_id,
         comment=data.comment,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/accept",
     response_model=PatientAssignmentOut,
@@ -80,7 +72,8 @@ async def accept_assignment_endpoint(
         assignment_id=assignment_id,
         psychologist_id=user.id,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/reject",
     response_model=PatientAssignmentOut,
@@ -97,7 +90,8 @@ async def reject_assignment_endpoint(
         psychologist_id=user.id,
         comment=data.comment,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/finish",
     response_model=PatientAssignmentOut,
@@ -114,7 +108,8 @@ async def finish_assignment_endpoint(
         performed_by_id=user.id,
         comment=data.comment,
     )
-    
+
+
 @router.post(
     "/{assignment_id}/cancel",
     response_model=PatientAssignmentOut,
@@ -131,8 +126,10 @@ async def cancel_assignment_endpoint(
         patient_id=user.id,
         comment=data.comment,
     )
-    
-#get
+
+
+# get
+
 
 @router.get(
     "/my",
@@ -158,10 +155,7 @@ async def get_my_assignment_endpoint(
 
     assignment, latest_event = assignment_data
 
-    return build_assignment_with_event_response(
-        assignment=assignment,
-        latest_event=latest_event,
-    )
+    return (await assignment_views(db, [(assignment, latest_event)]))[0]
 
 
 @router.get(
@@ -183,13 +177,7 @@ async def get_incoming_assignments_endpoint(
         psychologist_id=user.id,
     )
 
-    return [
-        build_assignment_with_event_response(
-            assignment=assignment,
-            latest_event=latest_event,
-        )
-        for assignment, latest_event in assignments
-    ]
+    return await assignment_views(db, assignments)
 
 
 @router.get(
@@ -211,13 +199,7 @@ async def get_active_assignments_endpoint(
         psychologist_id=user.id,
     )
 
-    return [
-        build_assignment_with_event_response(
-            assignment=assignment,
-            latest_event=latest_event,
-        )
-        for assignment, latest_event in assignments
-    ]
+    return await assignment_views(db, assignments)
 
 
 @router.get(
@@ -233,10 +215,4 @@ async def get_finished_assignments_endpoint(
         user_id=user.id,
     )
 
-    return [
-        build_assignment_with_event_response(
-            assignment=assignment,
-            latest_event=latest_event,
-        )
-        for assignment, latest_event in assignments
-    ]
+    return await assignment_views(db, assignments)

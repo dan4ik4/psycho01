@@ -1,8 +1,10 @@
 import os
 from zoneinfo import ZoneInfo
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
+
 
 class Settings(BaseSettings):
     DB_HOST: str
@@ -46,10 +48,10 @@ class Settings(BaseSettings):
     BILLING_TEST_MODE: bool | None = None
     AGORA_TEST_MODE: bool | None = None
     SCHEDULER_ENABLED: bool = True
-    BILLING_CURRENCY: str = "RUB"
+    BILLING_CURRENCY: str = "USD"
     BILLING_TIMEZONE: str = "Europe/Moscow"
     AI_FREE_DAILY_LIMIT: int = Field(default=3, ge=0)
-    SUBSCRIPTION_PRICE_MINOR: int = Field(default=99000, gt=0)
+    SUBSCRIPTION_PRICE_MINOR: int = Field(default=900, gt=0)
     SUBSCRIPTION_DAYS: int = Field(default=30, ge=1, le=366)
     BOOKING_HOLD_MINUTES: int = Field(default=15, ge=1, le=60)
     # Basis points of the gross charge. Unset rates prevent live checkout.
@@ -66,9 +68,11 @@ class Settings(BaseSettings):
     BILLING_LIVE_ENABLED: bool = False
 
     FRONTEND_URL: str = "http://localhost:3000"
+    PASSWORD_RESET_URL: str = "oakle://reset-password"
+    PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"
+    AVATAR_STORAGE_DIR: str = ".runtime/avatars"
 
     DEBUG: bool = False
-
 
     @property
     def DATABASE_URL(self) -> URL:
@@ -86,7 +90,10 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def resolve_test_modes(self):
         for name in (
-            "EMAIL_TEST_MODE", "AI_TEST_MODE", "BILLING_TEST_MODE", "AGORA_TEST_MODE"
+            "EMAIL_TEST_MODE",
+            "AI_TEST_MODE",
+            "BILLING_TEST_MODE",
+            "AGORA_TEST_MODE",
         ):
             if getattr(self, name) is None:
                 setattr(self, name, self.TEST_MODE)
@@ -104,5 +111,6 @@ class Settings(BaseSettings):
         if len(value) != 3 or not value.isalpha():
             raise ValueError("Use a three-letter currency code")
         return value.upper()
+
 
 settings = Settings(_env_file=os.environ.get("PSYCHO_ENV_FILE", ".env"))
