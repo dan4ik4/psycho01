@@ -7,7 +7,7 @@ class Specialist {
   final String spec;
   final String bio;
   final String price;
-  final double? priceRub;
+  final double? priceUsdPerSession;
   final int? experienceYears;
   final String image;
   final double rating;
@@ -19,7 +19,7 @@ class Specialist {
     required this.spec,
     required this.bio,
     required this.price,
-    this.priceRub,
+    this.priceUsdPerSession,
     this.experienceYears,
     required this.image,
     required this.rating,
@@ -27,15 +27,19 @@ class Specialist {
   });
 
   factory Specialist.fromJson(Map<String, dynamic> json) {
-    final rawMinorPrice = json['hourly_net_minor'];
-    final rawPrice =
-        json['price_rub'] ?? json['hourly_price_rub'] ?? json['price'];
-    final parsedPrice = rawPrice is num
-        ? rawPrice.toDouble()
-        : double.tryParse(rawPrice?.toString() ?? '');
+    final currency = (json['currency'] ?? json['session_price_currency'])
+        ?.toString()
+        .toUpperCase();
+    final rawMinorPrice = currency == 'USD'
+        ? json['session_price_minor']
+        : null;
+    final rawUsdPrice = json['session_price_usd'] ?? json['price_usd'];
+    final usdPrice = rawUsdPrice is num
+        ? rawUsdPrice.toDouble()
+        : double.tryParse(rawUsdPrice?.toString() ?? '');
     final rawExperience = json['experience_years'] ?? json['experience'];
-    final priceRub =
-        parsedPrice ??
+    final priceUsdPerSession =
+        usdPrice ??
         (rawMinorPrice is num ? rawMinorPrice.toDouble() / 100 : null);
     return Specialist(
       id: json['id']?.toString() ?? '',
@@ -44,8 +48,10 @@ class Specialist {
           .join(' '),
       spec: json['specialization']?.toString() ?? 'Психолог',
       bio: json['bio'] ?? '',
-      price: priceRub == null ? '—' : '${priceRub.toStringAsFixed(0)} ₽',
-      priceRub: priceRub,
+      price: priceUsdPerSession == null
+          ? '—'
+          : '\$${priceUsdPerSession.toStringAsFixed(2)} / сеанс',
+      priceUsdPerSession: priceUsdPerSession,
       experienceYears: rawExperience is num
           ? rawExperience.toInt()
           : int.tryParse(rawExperience?.toString() ?? ''),

@@ -15,7 +15,6 @@ import '../core/widgets/oakle_notice.dart';
 import 'breathing_screen.dart';
 import 'analytics_screen.dart';
 import 'call_screen.dart';
-import 'client_care_plan_card.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onOpenProfile;
@@ -1072,8 +1071,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      if (!widget.isPsychologist)
-                        ClientCarePlanCard(apiClient: widget.apiClient),
                       // Карточка Календаря
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),

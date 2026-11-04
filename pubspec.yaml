@@ -67,7 +67,7 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
   assets:
-    - .env
+    - .env.example
     - assets/images/lotus.png
     - assets/images/Wind.png
     - assets/images/White_Lotus.png

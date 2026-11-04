@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api/api_client.dart';
 import '../core/api/api_exception.dart';
 import '../core/widgets/oakle_notice.dart';
+import '../features/slots/domain/one_off_slot_interval.dart';
 import 'dart:convert';
 
 const Color kDeepPurple = Color(0xFFB0A6E8);
@@ -186,11 +187,21 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         final billing = await widget.apiClient.dio.get(
           '/billing/psychologist/me',
         );
-        if (billing.data is Map && billing.data['hourly_net_minor'] is num) {
-          nextPrice =
-              (billing.data['hourly_net_minor'] as num).toDouble() / 100;
-          _priceLoaded = true;
-          _priceAccessMessage = null;
+        if (billing.data is Map) {
+          final currency =
+              (billing.data['currency'] ??
+                      billing.data['session_price_currency'])
+                  ?.toString()
+                  .toUpperCase();
+          if (currency == 'USD' && billing.data['session_price_minor'] is num) {
+            nextPrice =
+                (billing.data['session_price_minor'] as num).toDouble() / 100;
+            _priceLoaded = true;
+            _priceAccessMessage = null;
+          } else {
+            _priceAccessMessage =
+                'Сервер не подтвердил, что цена указана в долларах США. Попросите администратора обновить валюту цены.';
+          }
         }
       } catch (error) {
         _priceAccessMessage = friendlyApiError(error);
@@ -289,10 +300,26 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
 
   Future<bool> _savePrice(double price) async {
     try {
+      final expectedMinor = (price * 100).round();
       await widget.apiClient.dio.patch(
         '/billing/psychologist/me',
-        data: {'hourly_net_minor': (price * 100).round()},
+        data: {'session_price_minor': expectedMinor, 'currency': 'USD'},
       );
+      final verification = await widget.apiClient.dio.get(
+        '/billing/psychologist/me',
+      );
+      final saved = verification.data;
+      final savedCurrency = saved is Map
+          ? (saved['currency'] ?? saved['session_price_currency'])
+                ?.toString()
+                .toUpperCase()
+          : null;
+      if (savedCurrency != 'USD' ||
+          saved['session_price_minor'] != expectedMinor) {
+        throw const FormatException(
+          'Сервер не подтвердил сохранение цены в USD. Попросите администратора добавить валюту USD для цены.',
+        );
+      }
       if (!mounted) return false;
       setState(() {
         sessionPrice = price;
@@ -360,9 +387,12 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         'end_at': end.toUtc().toIso8601String(),
       },
     );
-    if (response.data is Map && response.data['id'] != null) {
-      _slotIdsByDateAndTime['$date|$interval'] = response.data['id'].toString();
+    if (response.data is! Map || response.data['id'] == null) {
+      throw const FormatException(
+        'Сервер принял слот, но не вернул его номер. Обновите расписание и проверьте результат.',
+      );
     }
+    _slotIdsByDateAndTime['$date|$interval'] = response.data['id'].toString();
   }
 
   Future<void> _removeApiSlot(String date, String interval) async {
@@ -420,78 +450,100 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     }
   }
 
-  void _applyTemplateToMonth() {
+  Future<void> _applyTemplateToMonth() async {
     final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
     final lastDay = DateTime(visibleMonth.year, visibleMonth.month + 1, 0);
+    final desiredSlotsByDate = <String, List<String>>{};
 
-    setState(() {
-      for (int i = 0; i < lastDay.day; i++) {
-        final d = DateTime(firstDay.year, firstDay.month, firstDay.day + i);
-        final dateStr = _formatToYMD(d);
+    for (int i = 0; i < lastDay.day; i++) {
+      final d = DateTime(firstDay.year, firstDay.month, firstDay.day + i);
+      final dateStr = _formatToYMD(d);
 
-        final templateForDay = _weeklyTemplate[d.weekday] ?? [];
-        final bookedTimes = (_bookedVisits[dateStr] ?? [])
-            .map((b) => b['time'] as String)
-            .toList();
+      final templateForDay = _weeklyTemplate[d.weekday] ?? [];
+      final bookedTimes = (_bookedVisits[dateStr] ?? [])
+          .map((b) => b['time'] as String)
+          .toList();
 
-        final newSlots = {...templateForDay, ...bookedTimes}.toList();
-        newSlots.sort((a, b) => a.compareTo(b));
+      final desired = {...templateForDay, ...bookedTimes}.toList()..sort();
+      desiredSlotsByDate[dateStr] = desired;
+    }
 
-        if (newSlots.isNotEmpty) {
-          _availableSlots[dateStr] = newSlots;
-        } else {
-          _availableSlots.remove(dateStr);
+    await _saveSchedule();
+    try {
+      final monthKeys = desiredSlotsByDate.keys.toSet();
+      final bookedKeys = <String>{};
+      for (final entry in _bookedVisits.entries) {
+        for (final booking in entry.value) {
+          bookedKeys.add('${entry.key}|${booking['time']}');
         }
       }
-    });
-    _saveSchedule();
-    () async {
-      try {
-        final now = DateTime.now();
-        final bookedKeys = <String>{};
-        for (final entry in _bookedVisits.entries) {
-          for (final booking in entry.value) {
-            bookedKeys.add('${entry.key}|${booking['time']}');
+
+      // Remove old open slots in this month that are no longer in the template.
+      // Booked times are never removed here.
+      final obsoleteKeys = _slotIdsByDateAndTime.keys.where((key) {
+        final separator = key.indexOf('|');
+        if (separator < 0) return false;
+        final date = key.substring(0, separator);
+        final interval = key.substring(separator + 1);
+        return monthKeys.contains(date) &&
+            !bookedKeys.contains(key) &&
+            !(desiredSlotsByDate[date]?.contains(interval) ?? false);
+      }).toList();
+      for (final key in obsoleteKeys) {
+        final separator = key.indexOf('|');
+        await _removeApiSlot(
+          key.substring(0, separator),
+          key.substring(separator + 1),
+        );
+      }
+
+      final now = DateTime.now();
+      for (final entry in desiredSlotsByDate.entries) {
+        for (final interval in entry.value) {
+          final key = '${entry.key}|$interval';
+          if (bookedKeys.contains(key) ||
+              _slotIdsByDateAndTime.containsKey(key)) {
+            continue;
           }
-        }
-        for (final entry in _availableSlots.entries) {
-          for (final interval in entry.value) {
-            final key = '${entry.key}|$interval';
-            final parts = interval.split(' - ');
-            if (parts.length != 2 ||
-                bookedKeys.contains(key) ||
-                _slotIdsByDateAndTime.containsKey(key)) {
-              continue;
-            }
-            final startParts = parts.first.split(':').map(int.parse).toList();
-            final day = DateTime.parse(entry.key);
-            final start = DateTime(
-              day.year,
-              day.month,
-              day.day,
-              startParts[0],
-              startParts[1],
-            );
-            if (!start.isAfter(now)) continue;
-            await _createApiSlot(entry.key, interval);
-          }
-        }
-        if (mounted) showOakleNotice(context, 'Расписание опубликовано');
-        await _loadData();
-      } catch (error) {
-        if (mounted) {
-          showOakleNotice(
-            context,
-            friendlyApiError(
-              error,
-              fallback:
-                  'Не удалось полностью опубликовать расписание. Проверьте, что выбранное время ещё не прошло и аккаунту выдана роль психолога.',
-            ),
-            isError: true,
+          final parts = interval.split(' - ');
+          if (parts.length != 2) continue;
+          final startParts = parts.first.split(':').map(int.parse).toList();
+          final day = DateTime.parse(entry.key);
+          final start = DateTime(
+            day.year,
+            day.month,
+            day.day,
+            startParts[0],
+            startParts[1],
           );
+          if (start.isAfter(now)) await _createApiSlot(entry.key, interval);
         }
       }
-    }();
+
+      if (!mounted) return;
+      setState(() {
+        _availableSlots
+          ..removeWhere((date, _) => monthKeys.contains(date))
+          ..addAll(
+            desiredSlotsByDate.map((date, slots) => MapEntry(date, slots)),
+          );
+      });
+      showOakleNotice(context, 'Расписание опубликовано');
+      await _loadData();
+    } catch (error) {
+      if (mounted) {
+        showOakleNotice(
+          context,
+          friendlyApiError(
+            error,
+            fallback:
+                'Не удалось полностью обновить расписание. Проверьте, что выбранное время ещё не прошло и аккаунту выдана роль психолога.',
+          ),
+          isError: true,
+        );
+      }
+      await _loadData();
+    }
   }
 
   Future<void> _pickTime(
@@ -672,6 +724,72 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     );
   }
 
+  Future<void> _addOneOffSlot(String date) async {
+    final startTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      helpText: 'Выберите время начала',
+      cancelText: 'Отмена',
+      confirmText: 'Далее',
+    );
+    if (startTime == null || !mounted) return;
+
+    final startMinutes = startTime.hour * 60 + startTime.minute;
+    final suggestedEnd = startMinutes + sessionDurationMinutes;
+    final endTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: (suggestedEnd ~/ 60) % 24,
+        minute: suggestedEnd % 60,
+      ),
+      helpText: 'Выберите время окончания',
+      cancelText: 'Отмена',
+      confirmText: 'Готово',
+    );
+    if (endTime == null || !mounted) return;
+
+    final slotDate = DateTime.parse(date);
+    final existingIntervals = <String>[
+      ...(_availableSlots[date] ?? const <String>[]),
+      ...(_bookedVisits[date] ?? const <Map<String, dynamic>>[]).map(
+        (booking) => booking['time']?.toString() ?? '',
+      ),
+    ];
+    late final String interval;
+    try {
+      interval = OneOffSlotInterval.validateAndFormat(
+        date: slotDate,
+        startTime: startTime,
+        endTime: endTime,
+        now: DateTime.now(),
+        existingIntervals: existingIntervals,
+      );
+    } on FormatException catch (error) {
+      showOakleNotice(context, error.message, isError: true);
+      return;
+    }
+
+    try {
+      await _createApiSlot(date, interval);
+      if (!mounted) return;
+      setState(() {
+        _availableSlots.putIfAbsent(date, () => []);
+        _availableSlots[date]!.add(interval);
+        _availableSlots[date]!.sort();
+      });
+      await _saveSchedule();
+      if (mounted) showOakleNotice(context, 'Слот добавлен в расписание.');
+    } catch (error) {
+      if (mounted) {
+        showOakleNotice(
+          context,
+          'Не удалось создать слот. ${friendlyApiError(error)}',
+          isError: true,
+        );
+      }
+    }
+  }
+
   void _showPriceEditor() {
     TextEditingController controller = TextEditingController(
       text: sessionPrice.toInt().toString(),
@@ -693,7 +811,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
             fontSize: 22,
             fontWeight: FontWeight.bold,
           ),
-          decoration: const InputDecoration(suffixText: "₽"),
+          decoration: const InputDecoration(suffixText: "\$"),
         ),
         actions: [
           TextButton(
@@ -1742,7 +1860,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                                 children: [
                                   Text(
                                     _priceLoaded
-                                        ? "${sessionPrice.toInt()} ₽"
+                                        ? "\$${sessionPrice.toStringAsFixed(2)} / сеанс"
                                         : 'Не загружена',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
@@ -1765,7 +1883,8 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                       if (!_priceLoaded && _priceAccessMessage != null) ...[
                         const SizedBox(height: 6),
                         Text(
-                          'Цена пока не загружена. Проверьте у администратора роль психолога и доступ к оплате.',
+                          _priceAccessMessage ??
+                              'Сервер пока не подтвердил валюту цены. Попросите администратора включить цены в USD.',
                           style: TextStyle(color: kWeekendRed, fontSize: 12),
                         ),
                       ],
@@ -2119,47 +2238,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                             itemBuilder: (context, index) {
                               if (index == currentSlots.length) {
                                 return InkWell(
-                                  onTap: () {
-                                    _pickTime(context, (time) async {
-                                      final interval = _calculateInterval(
-                                        time,
-                                        sessionDurationMinutes,
-                                      );
-                                      try {
-                                        final date = _formatToYMD(
-                                          _selectedDate ?? DateTime.now(),
-                                        );
-                                        await _createApiSlot(date, interval);
-                                      } catch (error) {
-                                        if (mounted)
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Не удалось создать время. ${friendlyApiError(error)}',
-                                              ),
-                                            ),
-                                          );
-                                        return;
-                                      }
-                                      setState(() {
-                                        _availableSlots.putIfAbsent(
-                                          selectedDateStr!,
-                                          () => [],
-                                        );
-                                        if (!(_availableSlots[selectedDateStr]!
-                                            .contains(interval))) {
-                                          _availableSlots[selectedDateStr]!.add(
-                                            interval,
-                                          );
-                                          _availableSlots[selectedDateStr]!
-                                              .sort((a, b) => a.compareTo(b));
-                                        }
-                                      });
-                                      _saveSchedule();
-                                    });
-                                  },
+                                  onTap: () => _addOneOffSlot(selectedDateStr!),
                                   child: Container(
                                     decoration: BoxDecoration(
                                       color: kAccentPurple,

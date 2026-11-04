@@ -269,11 +269,13 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
         final minPrice = double.tryParse(_minPriceController.text.trim());
         final maxPrice = double.tryParse(_maxPriceController.text.trim());
         if (minPrice != null &&
-            (s.priceRub == null || s.priceRub! < minPrice)) {
+            (s.priceUsdPerSession == null ||
+                s.priceUsdPerSession! < minPrice)) {
           return false;
         }
         if (maxPrice != null &&
-            (s.priceRub == null || s.priceRub! > maxPrice)) {
+            (s.priceUsdPerSession == null ||
+                s.priceUsdPerSession! > maxPrice)) {
           return false;
         }
         final minExperience = int.tryParse(
@@ -382,14 +384,16 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                   ),
                   const SizedBox(height: 25),
                   const Text(
-                    'Стоимость сеанса, ₽',
+                    'Цена за сеанс, USD',
                     style: TextStyle(
                       color: kTextPrimary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  if (specialists.any((item) => item.priceRub != null))
+                  if (specialists.any(
+                    (item) => item.priceUsdPerSession != null,
+                  ))
                     Row(
                       children: [
                         Expanded(
@@ -401,7 +405,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                             ],
                             decoration: const InputDecoration(
                               labelText: 'От',
-                              suffixText: '₽',
+                              suffixText: '\$',
                               border: OutlineInputBorder(),
                             ),
                             onChanged: (_) {
@@ -420,7 +424,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                             ],
                             decoration: const InputDecoration(
                               labelText: 'До',
-                              suffixText: '₽',
+                              suffixText: '\$',
                               border: OutlineInputBorder(),
                             ),
                             onChanged: (_) {
@@ -1019,7 +1023,7 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                             ],
                           ),
                           Text(
-                            doc.priceRub == null
+                            doc.priceUsdPerSession == null
                                 ? 'Цена уточняется'
                                 : doc.price,
                             maxLines: 1,
@@ -1276,7 +1280,9 @@ class _SpecialistListScreenState extends State<SpecialistListScreen> {
                         ],
                       ),
                       Text(
-                        doc.priceRub == null ? 'Цена уточняется' : doc.price,
+                        doc.priceUsdPerSession == null
+                            ? 'Цена уточняется'
+                            : doc.price,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -1566,6 +1572,49 @@ class _SpecialistProfileScreenState extends State<SpecialistProfileScreen> {
   }
 
   void _showRatingDialog() {
+    _checkRatingEligibilityAndShowDialog();
+  }
+
+  Future<void> _checkRatingEligibilityAndShowDialog() async {
+    try {
+      final response = await widget.apiClient.dio.get('/slots/history');
+      final rows = response.data;
+      final canRate =
+          rows is List &&
+          rows.any((raw) {
+            if (raw is! Map) return false;
+            final slot = Map<String, dynamic>.from(raw);
+            if (slot['psychologist_id']?.toString() != widget.specialist.id) {
+              return false;
+            }
+            final latest = slot['latest_event'];
+            return latest is Map &&
+                latest['event_type']?.toString().toLowerCase() == 'completed';
+          });
+
+      if (!mounted) return;
+      if (!canRate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Оценить психолога можно после завершённого сеанса.'),
+          ),
+        );
+        return;
+      }
+      _openRatingDialog();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Не удалось проверить завершённые сеансы. ${_ratingFailureMessage(error)}',
+          ),
+        ),
+      );
+    }
+  }
+
+  void _openRatingDialog() {
     showDialog(
       context: context,
       builder: (context) {

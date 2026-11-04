@@ -1,19 +1,32 @@
-# god_save_this_shit_app
+# Oakle — мобильное приложение
 
-A new Flutter project.
+Клиентское Flutter-приложение для пациентов и психологов. Основной API-сервер: `https://api.oakle.app/api/v1/`.
 
-## Getting Started
+## Запуск в Android Studio
 
-This project is a starting point for a Flutter application.
+1. Установите Flutter SDK версии 3.35.2 или новее и плагины Flutter и Dart для Android Studio.
+2. Откройте папку проекта.
+3. Выполните `flutter pub get` в терминале Android Studio.
+4. Подключите Android-эмулятор или телефон с включённой USB-отладкой.
+5. Нажмите **Run** или выполните `flutter run`.
 
-A few resources to get you started if this is your first Flutter project:
+Адрес API задаётся в `.env.example`. Сейчас там указан рабочий адрес сервера Oakle. Секреты и персональные данные в этот файл добавлять не нужно.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Проверка и сборка
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- `flutter analyze` — статическая проверка Dart-кода.
+- `flutter test` — проверяет правила одиночного слота, цену в USD и ввод даты рождения.
+- `flutter build apk --debug` — APK для установки и ручной проверки.
+- `flutter build appbundle --release` — Android App Bundle для подготовки к публикации.
 
-# psycho01
+Debug APK создаётся в `build/app/outputs/flutter-apk/app-debug.apk`, App Bundle — в `build/app/outputs/bundle/release/app-release.aab`.
 
+## Перед публикацией
+
+- Задайте постоянный уникальный Android `applicationId`.
+- Настройте отдельную release-подпись. Сейчас release-сборка подписывается debug-ключом и не готова для публикации в магазине.
+- Согласуйте с сервером цену психолога за сеанс в USD и загрузку фотографии: актуальная схема API пока описывает почасовую ставку без валюты и не содержит поля фотографии.
+- Проверьте сценарии с тестовыми аккаунтами пациента и психолога, включая запись на сеанс, завершение сеанса, оценку и видеозвонок.
+- Настройте в письме сброса пароля ссылку `oakle://reset-password?token=...`, чтобы Android и iOS открывали форму приложения.
+
+Дневник и аналитика хранят данные на устройстве и не требуют доступности API. Доступ к функциям психолога зависит от роли аккаунта на сервере.
