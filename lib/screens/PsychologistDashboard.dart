@@ -7,6 +7,8 @@ import '../core/widgets/oakle_notice.dart';
 import '../features/slots/domain/one_off_slot_interval.dart';
 import 'dart:convert';
 
+import 'package:url_launcher/url_launcher.dart';
+
 const Color kDeepPurple = Color(0xFFB0A6E8);
 const Color kAccentPurple = Color(0xFF7862D6);
 const Color kWarmWhite = Color(0xFFF6F8FD);
@@ -32,6 +34,10 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
   int sessionDurationMinutes = 60;
   String? _priceAccessMessage;
   bool _priceLoaded = false;
+  bool _supportsSessionPrice = false;
+  bool _paymentsConnected = false;
+  bool _paymentsTestMode = false;
+  bool _openingPaymentSetup = false;
 
   DateTime visibleMonth = DateTime.now();
   DateTime? _selectedDate;
@@ -183,11 +189,17 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
           _assignmentUiModel(Map<String, dynamic>.from(raw as Map)),
         );
       }
+      _priceLoaded = false;
+      _supportsSessionPrice = false;
+      _paymentsConnected = false;
+      _paymentsTestMode = false;
       try {
         final billing = await widget.apiClient.dio.get(
           '/billing/psychologist/me',
         );
         if (billing.data is Map) {
+          _paymentsConnected = billing.data['connected'] == true;
+          _paymentsTestMode = billing.data['test_mode'] == true;
           final currency =
               (billing.data['currency'] ??
                       billing.data['session_price_currency'])
@@ -197,13 +209,22 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
             nextPrice =
                 (billing.data['session_price_minor'] as num).toDouble() / 100;
             _priceLoaded = true;
+            _supportsSessionPrice = true;
             _priceAccessMessage = null;
-          } else {
+          } else if (billing.data['hourly_net_minor'] is num) {
+            _supportsSessionPrice = false;
             _priceAccessMessage =
-                'Сервер не подтвердил, что цена указана в долларах США. Попросите администратора обновить валюту цены.';
+                'Сервер хранит цену за час, а приложению нужна цена за сеанс. Коллеге нужно добавить цену за сеанс в USD.';
+          } else {
+            _supportsSessionPrice = false;
+            _priceAccessMessage =
+                'Сервер пока не возвращает цену за сеанс в USD. Попросите коллегу обновить API.';
           }
         }
       } catch (error) {
+        _supportsSessionPrice = false;
+        _paymentsConnected = false;
+        _paymentsTestMode = false;
         _priceAccessMessage = friendlyApiError(error);
       }
     } catch (error) {
@@ -299,6 +320,15 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
   }
 
   Future<bool> _savePrice(double price) async {
+    if (!_supportsSessionPrice) {
+      showOakleNotice(
+        context,
+        _priceAccessMessage ??
+            'Сервер пока не поддерживает сохранение цены за сеанс в USD. Попросите коллегу обновить API.',
+        isError: true,
+      );
+      return false;
+    }
     try {
       final expectedMinor = (price * 100).round();
       await widget.apiClient.dio.patch(
@@ -324,6 +354,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
       setState(() {
         sessionPrice = price;
         _priceLoaded = true;
+        _supportsSessionPrice = true;
         _priceAccessMessage = null;
       });
       showOakleNotice(context, 'Стоимость сохранена');
@@ -341,6 +372,71 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         );
       }
       return false;
+    }
+  }
+
+  Future<void> _startPaymentOnboarding() async {
+    if (_openingPaymentSetup) return;
+    setState(() => _openingPaymentSetup = true);
+    try {
+      final response = await widget.apiClient.dio.post(
+        '/billing/psychologist/onboarding',
+      );
+      if (response.data is! Map) {
+        throw const FormatException('Сервер вернул неожиданный ответ.');
+      }
+      final result = Map<String, dynamic>.from(response.data as Map);
+      final testMode = result['test_mode'] == true;
+      final connected = result['connected'] == true;
+      final rawUrl = result['url']?.toString();
+
+      if (connected && (testMode || rawUrl == null || rawUrl.isEmpty)) {
+        if (mounted) {
+          setState(() {
+            _paymentsConnected = true;
+            _paymentsTestMode = testMode;
+          });
+          showOakleNotice(
+            context,
+            testMode
+                ? 'Сервер сообщил: подключение выплат работает в тестовом режиме.'
+                : 'Получение выплат уже подключено.',
+          );
+        }
+        return;
+      }
+
+      final uri = rawUrl == null ? null : Uri.tryParse(rawUrl);
+      if (uri == null || uri.scheme != 'https') {
+        throw const FormatException(
+          'Сервер не вернул безопасную ссылку для настройки выплат.',
+        );
+      }
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        throw const FormatException(
+          'Не удалось открыть страницу платёжного провайдера.',
+        );
+      }
+      if (mounted) {
+        showOakleNotice(
+          context,
+          'Завершите настройку в браузере, затем обновите статус выплат.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        showOakleNotice(
+          context,
+          'Не удалось открыть настройку выплат. ${friendlyApiError(error)}',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _openingPaymentSetup = false);
     }
   }
 
@@ -453,10 +549,23 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
   Future<void> _applyTemplateToMonth() async {
     final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
     final lastDay = DateTime(visibleMonth.year, visibleMonth.month + 1, 0);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (lastDay.isBefore(today)) {
+      await _saveSchedule();
+      if (mounted) {
+        showOakleNotice(
+          context,
+          'Прошедшие даты не менялись. Шаблон сохранён для будущих дней.',
+        );
+      }
+      return;
+    }
     final desiredSlotsByDate = <String, List<String>>{};
 
     for (int i = 0; i < lastDay.day; i++) {
       final d = DateTime(firstDay.year, firstDay.month, firstDay.day + i);
+      if (d.isBefore(today)) continue;
       final dateStr = _formatToYMD(d);
 
       final templateForDay = _weeklyTemplate[d.weekday] ?? [];
@@ -485,7 +594,17 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         if (separator < 0) return false;
         final date = key.substring(0, separator);
         final interval = key.substring(separator + 1);
+        final intervalStart = interval.split(' - ').first.split(':');
+        final slotDate = DateTime.parse(date);
+        final slotStart = DateTime(
+          slotDate.year,
+          slotDate.month,
+          slotDate.day,
+          int.parse(intervalStart[0]),
+          int.parse(intervalStart[1]),
+        );
         return monthKeys.contains(date) &&
+            slotStart.isAfter(now) &&
             !bookedKeys.contains(key) &&
             !(desiredSlotsByDate[date]?.contains(interval) ?? false);
       }).toList();
@@ -497,7 +616,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
         );
       }
 
-      final now = DateTime.now();
       for (final entry in desiredSlotsByDate.entries) {
         for (final interval in entry.value) {
           final key = '${entry.key}|$interval';
@@ -537,7 +655,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
           friendlyApiError(
             error,
             fallback:
-                'Не удалось полностью обновить расписание. Проверьте, что выбранное время ещё не прошло и аккаунту выдана роль психолога.',
+                'Не удалось обновить расписание. Проверьте соединение и роль психолога.',
           ),
           isError: true,
         );
@@ -791,6 +909,15 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
   }
 
   void _showPriceEditor() {
+    if (!_supportsSessionPrice) {
+      showOakleNotice(
+        context,
+        _priceAccessMessage ??
+            'Сервер пока не поддерживает цену за сеанс в USD. Попросите коллегу обновить API.',
+        isError: true,
+      );
+      return;
+    }
     TextEditingController controller = TextEditingController(
       text: sessionPrice.toInt().toString(),
     );
@@ -1022,11 +1149,9 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
 
   Future<void> _showTreatmentPlanDialog(Map<String, dynamic> client) async {
     final aiInstructions = TextEditingController();
-    final patientRecommendations = TextEditingController();
     final assignmentId = client['id']?.toString();
     if (assignmentId == null) {
       aiInstructions.dispose();
-      patientRecommendations.dispose();
       return;
     }
     var hasPlan = false;
@@ -1040,13 +1165,10 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
       );
       aiInstructions.text =
           latestVersion['instructions_for_ai']?.toString() ?? '';
-      patientRecommendations.text =
-          latestVersion['patient_recommendations']?.toString() ?? '';
       hasPlan = true;
     } catch (error) {
       if (error is! DioException || error.response?.statusCode != 404) {
         aiInstructions.dispose();
-        patientRecommendations.dispose();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1065,7 +1187,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
     }
     if (!mounted) {
       aiInstructions.dispose();
-      patientRecommendations.dispose();
       return;
     }
     var isSaving = false;
@@ -1111,7 +1232,7 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Инструкции для ИИ',
+                      'План для ИИ',
                       style: TextStyle(
                         color: kTextPrimary,
                         fontWeight: FontWeight.w600,
@@ -1124,23 +1245,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                       maxLength: 10000,
                       decoration: const InputDecoration(
                         hintText: 'Что ИИ должен учитывать в беседе?',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Рекомендации пациенту',
-                      style: TextStyle(
-                        color: kTextPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: patientRecommendations,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText: 'Рекомендации, которые увидит пациент',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -1178,20 +1282,12 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                             saveError = null;
                           });
                           final instructions = aiInstructions.text.trim();
-                          final recommendations = patientRecommendations.text
-                              .trim();
                           try {
                             late Map<String, dynamic> version;
                             if (hasPlan) {
                               final response = await widget.apiClient.dio.post(
                                 '/ai/care-plans/$assignmentId/versions',
-                                data: {
-                                  'instructions_for_ai': instructions,
-                                  'patient_recommendations':
-                                      recommendations.isEmpty
-                                      ? null
-                                      : recommendations,
-                                },
+                                data: {'instructions_for_ai': instructions},
                               );
                               version = Map<String, dynamic>.from(
                                 response.data as Map,
@@ -1202,10 +1298,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                                 data: {
                                   'assignment_id': assignmentId,
                                   'instructions_for_ai': instructions,
-                                  'patient_recommendations':
-                                      recommendations.isEmpty
-                                      ? null
-                                      : recommendations,
                                 },
                               );
                               final planResponse = Map<String, dynamic>.from(
@@ -1226,8 +1318,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                               '/ai/care-plans/$assignmentId/activate',
                               data: {'version_id': versionId},
                             );
-                            client['treatmentPlan'] = instructions;
-                            client['patientRecommendations'] = recommendations;
                             if (!mounted || !ctx.mounted) return;
                             didClose = true;
                             Navigator.pop(ctx);
@@ -1282,7 +1372,6 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
       ),
     ).whenComplete(() {
       aiInstructions.dispose();
-      patientRecommendations.dispose();
     });
   }
 
@@ -1888,6 +1977,79 @@ class _PsychologistDashboardState extends State<PsychologistDashboard> {
                           style: TextStyle(color: kWeekendRed, fontSize: 12),
                         ),
                       ],
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: kWarmWhite.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  color: kAccentPurple,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _paymentsConnected
+                                        ? (_paymentsTestMode
+                                              ? 'Выплаты: тестовый режим'
+                                              : 'Выплаты подключены')
+                                        : 'Получение оплаты за сеансы',
+                                    style: const TextStyle(
+                                      color: kTextPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Обновить статус выплат',
+                                  onPressed: _loadData,
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                    color: kAccentPurple,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!_paymentsConnected) ...[
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Подключите платёжный аккаунт, чтобы получать оплату за консультации.',
+                                style: TextStyle(color: kTextSecondary),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _openingPaymentSetup
+                                      ? null
+                                      : _startPaymentOnboarding,
+                                  icon: _openingPaymentSetup
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.open_in_new_rounded),
+                                  label: Text(
+                                    _openingPaymentSetup
+                                        ? 'Открываем…'
+                                        : 'Настроить получение оплаты',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 20),
 
                       GestureDetector(

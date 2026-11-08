@@ -36,6 +36,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Камера нужна для видеоконсультаций с психологом и загрузки фото профиля.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Микрофон нужен для разговора во время видеоконсультации с психологом.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Oakle использует выбранное вами фото для изображения профиля психолога.</string>
 	<key>UILaunchStoryboardName</key>

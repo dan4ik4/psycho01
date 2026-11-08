@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -23,6 +25,10 @@ class _CallScreenState extends State<CallScreen> {
 
   bool _isMuted = false;
   bool _isVideoDisabled = false;
+  bool _isSpeakerEnabled = true;
+  DateTime? _callStartedAt;
+  Duration _callDuration = Duration.zero;
+  Timer? _callDurationTimer;
 
   RtcEngine? _engine;
   bool _joinedBackend = false;
@@ -108,6 +114,16 @@ class _CallScreenState extends State<CallScreen> {
             setState(() {
               _localUserJoined = true;
               _isLoading = false;
+              _callStartedAt ??= DateTime.now();
+            });
+            _callDurationTimer ??= Timer.periodic(const Duration(seconds: 1), (
+              _,
+            ) {
+              final startedAt = _callStartedAt;
+              if (!mounted || startedAt == null) return;
+              setState(
+                () => _callDuration = DateTime.now().difference(startedAt),
+              );
             });
           }
         },
@@ -139,6 +155,7 @@ class _CallScreenState extends State<CallScreen> {
 
     await _engine!.enableVideo();
     await _engine!.startPreview();
+    await _engine!.setEnableSpeakerphone(_isSpeakerEnabled);
 
     await _engine!.joinChannel(
       token: token,
@@ -166,6 +183,23 @@ class _CallScreenState extends State<CallScreen> {
     _engine!.muteLocalVideoStream(_isVideoDisabled);
   }
 
+  void _onToggleSpeaker() {
+    final engine = _engine;
+    if (engine == null) return;
+    final enabled = !_isSpeakerEnabled;
+    setState(() => _isSpeakerEnabled = enabled);
+    engine.setEnableSpeakerphone(enabled);
+  }
+
+  String _formatCallDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (hours > 0)
+      return '${hours.toString().padLeft(2, '0')}:$minutes:$seconds';
+    return '$minutes:$seconds';
+  }
+
   void _onSwitchCamera() {
     _engine?.switchCamera();
   }
@@ -176,6 +210,7 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void dispose() {
+    _callDurationTimer?.cancel();
     _disposeAgora();
     super.dispose();
   }
@@ -289,27 +324,48 @@ class _CallScreenState extends State<CallScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: warmWhite.withOpacity(0.1)),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _remoteUid != null
-                            ? Colors.greenAccent
-                            : Colors.orangeAccent,
-                        shape: BoxShape.circle,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _remoteUid != null
+                                ? Colors.greenAccent
+                                : Colors.orangeAccent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _remoteUid != null
+                              ? 'На связи'
+                              : _localUserJoined
+                              ? 'Ожидание специалиста'
+                              : 'Соединение...',
+                          style: TextStyle(
+                            color: warmWhite,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _remoteUid != null ? "Консультация" : "Соединение...",
-                      style: TextStyle(
-                        color: warmWhite,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    if (_localUserJoined) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        _formatCallDuration(_callDuration),
+                        style: TextStyle(
+                          color: warmWhite.withOpacity(0.75),
+                          fontSize: 11,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -437,7 +493,14 @@ class _CallScreenState extends State<CallScreen> {
             onPressed: _onToggleVideo,
           ),
           _buildActionButton(
-            icon: Icons.cameraswitch,
+            icon: _isSpeakerEnabled
+                ? Icons.volume_up_rounded
+                : Icons.hearing_rounded,
+            isActive: _isSpeakerEnabled,
+            onPressed: _onToggleSpeaker,
+          ),
+          _buildActionButton(
+            icon: Icons.cameraswitch_rounded,
             isActive: true,
             onPressed: _onSwitchCamera,
           ),

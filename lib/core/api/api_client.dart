@@ -11,7 +11,13 @@ class ApiClient {
   ApiClient({
     required TokenStorage tokenStorage,
     VoidCallback? onUnauthorized,
+    Dio? dioOverride,
   }) {
+    if (dioOverride != null) {
+      dio = dioOverride;
+      return;
+    }
+
     final baseUrl =
         dotenv.env['API_BASE_URL'] ?? 'https://api.oakle.app/api/v1/';
     final configuredUri = Uri.parse(baseUrl);

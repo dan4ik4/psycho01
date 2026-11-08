@@ -1,0 +1,6 @@
+# Copy to android/key.properties and replace with your private values.
+# Never commit key.properties, passwords, or the keystore file.
+storeFile=oakle-upload-key.jks
+storePassword=REPLACE_WITH_PRIVATE_PASSWORD
+keyAlias=oakle-upload
+keyPassword=REPLACE_WITH_PRIVATE_PASSWORD
